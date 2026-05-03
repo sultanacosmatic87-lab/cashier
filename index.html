@@ -137,8 +137,23 @@
         @media print {
             body * { visibility: hidden; }
             #print-area, #print-area * { visibility: visible; }
-            #print-area { position: fixed; left: 0; top: 0; width: 100%; padding: 20px; }
-            .btn-row { display: none !important; }
+            #print-area { 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 100%; 
+                padding: 0; 
+                margin: 0;
+                background: white;
+            }
+            @page {
+                size: 80mm auto; 
+                margin: 0;
+            }
+            .modal, .btn-row, header, footer { display: none !important; }
+            #store-header-print { display: block !important; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
+            #modal-items-list table { font-size: 12px !important; border-top: 1px dashed #000; }
+            #modal-total { border-top: 1px dashed #000; padding-top: 10px; font-size: 16px !important; }
         }
     </style>
 </head>
@@ -352,7 +367,7 @@
             </div>
             <input type="text" id="s-item-name" placeholder="اسم المادة">
             <div style="display:flex; gap:10px">
-                <input type="number" id="s-price" placeholder="سعر البيع">
+                <input type="number" id="s-price" placeholder="السعر">
                 <input type="number" id="s-qty" value="1">
             </div>
             
@@ -450,7 +465,7 @@
             <div id="modal-total" style="font-size:1.4rem; font-weight:bold; text-align:center; margin-top:20px; color:#e74c3c;"></div>
         </div>
         <div class="btn-row" style="margin-top:20px; flex-wrap: wrap;">
-            <button class="btn-action bg-print" onclick="window.print()"><i class="fas fa-print"></i> طباعة</button>
+            <button class="btn-action bg-print" onclick="window.print()"><i class="fas fa-print"></i> طباعة حرارية</button>
             <button class="btn-action" style="background:#e67e22" onclick="shareToWhatsApp()"><i class="fab fa-whatsapp"></i> واتساب</button>
             <button class="btn-action" style="background:#2c3e50" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
             <button class="btn-action bg-back" onclick="closeModal()">إغلاق</button>
@@ -490,84 +505,187 @@
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
 
-    // --- وظائف الموظفين المحدثة ---
-    function renderStaff() {
-        const container = document.getElementById('staff-list-container');
-        if(!container) return;
+    // --- نظام المشتريات (تفعيل حقل الكود) ---
+    function addItemToPurchase() {
+        const barcode = document.getElementById('p-barcode').value;
+        const code = document.getElementById('p-code').value; // التقاط الكود
+        const name = document.getElementById('p-item-name').value;
+        const qty = parseFloat(document.getElementById('p-qty').value);
+        const cost = parseFloat(document.getElementById('p-cost').value);
+        const price = parseFloat(document.getElementById('p-price').value);
+
+        if (!name || isNaN(qty) || isNaN(cost) || isNaN(price)) return alert("يرجى ملء بيانات المادة كاملة (الاسم، العدد، التكلفة، البيع)");
+
+        // حفظ الكود مع المادة
+        tempPurchases.push({ barcode, code, name, qty, cost, price });
+        
+        const total = tempPurchases.reduce((sum, item) => sum + (item.qty * item.cost), 0);
+        document.getElementById('purchase-total-text').innerText = `المبلغ الكلي: ${total.toLocaleString()} د.ع`;
+
+        // مسح الحقول
+        document.getElementById('p-barcode').value = '';
+        document.getElementById('p-code').value = '';
+        document.getElementById('p-item-name').value = '';
+        document.getElementById('p-qty').value = '';
+        document.getElementById('p-cost').value = '';
+        document.getElementById('p-price').value = '';
+        alert("تمت إضافة المادة للفاتورة المؤقتة");
+    }
+
+    function savePurchase() {
+        if (tempPurchases.length === 0) return alert("الفاتورة فارغة، أضف مواد أولاً");
+
+        const invoiceTotal = tempPurchases.reduce((sum, item) => sum + (item.qty * item.cost), 0);
+        const invoice = {
+            id: Date.now(),
+            customer: document.getElementById('p-customer').value || "مجهز غير مسمى",
+            invoiceNum: document.getElementById('p-invoice-num').value,
+            date: new Date().toLocaleString('ar-EG'),
+            items: [...tempPurchases],
+            total: invoiceTotal
+        };
+
+        purchaseInvoices.push(invoice);
+        localStorage.setItem('pos_p_invoices', JSON.stringify(purchaseInvoices));
+
+        tempPurchases.forEach(newItem => {
+            // البحث عن مادة موجودة عبر الباركود أو الكود أو الاسم
+            let existingItem = inventory.find(i => 
+                (i.barcode && newItem.barcode && i.barcode === newItem.barcode) || 
+                (i.code && newItem.code && i.code === newItem.code) || 
+                i.name === newItem.name
+            );
+
+            if (existingItem) {
+                existingItem.qty += newItem.qty;
+                existingItem.cost = newItem.cost;
+                existingItem.price = newItem.price;
+                if(newItem.code) existingItem.code = newItem.code; // تحديث الكود إذا وجد
+            } else {
+                inventory.push({
+                    barcode: newItem.barcode,
+                    code: newItem.code, // حفظ الكود في المخزن
+                    name: newItem.name,
+                    qty: newItem.qty,
+                    cost: newItem.cost,
+                    price: newItem.price
+                });
+            }
+        });
+
+        localStorage.setItem('pos_inventory', JSON.stringify(inventory));
+        alert("تم حفظ الفاتورة وتحديث المخزن بنجاح");
+        
+        tempPurchases = [];
+        document.getElementById('purchase-total-text').innerText = "المبلغ الكلي: 0 د.ع";
+        document.getElementById('p-customer').value = "";
+        document.getElementById('p-invoice-num').value = "";
+        showSection('home-screen');
+        updateQuickStats();
+    }
+
+    // --- نظام المبيعات (تفعيل البحث عبر الكود والباركود) ---
+    function searchProductByBarcode(barcode) {
+        if(!barcode) return;
+        const item = inventory.find(i => i.barcode === barcode);
+        if (item) {
+            document.getElementById('s-item-name').value = item.name;
+            document.getElementById('s-price').value = item.price;
+            document.getElementById('s-qty').focus();
+        }
+    }
+
+    function searchProductByCode(code) {
+        if(!code) return;
+        // البحث في المخزن عن المادة التي تملك هذا الكود
+        const item = inventory.find(i => i.code === code);
+        if (item) {
+            document.getElementById('s-item-name').value = item.name;
+            document.getElementById('s-price').value = item.price;
+            document.getElementById('s-qty').focus();
+        }
+    }
+
+    // --- وظائف العرض والطباعة ---
+    function showInvoiceDetails(inv, type) {
+        currentActiveInvoice = inv;
+        const storeInfo = JSON.parse(localStorage.getItem('pos_store_info')) || {};
+        const header = document.getElementById('store-header-print');
+        
+        header.style.display = 'block'; 
+        document.getElementById('print-store-name').innerText = storeInfo.name || "كاشير برو";
+        document.getElementById('print-store-address').innerText = "العنوان: " + (storeInfo.address || "غير محدد");
+        document.getElementById('print-store-phone').innerText = "هاتف: " + (storeInfo.phone || "غير محدد");
+        
+        document.getElementById('modal-title').innerText = (type === 'sales') ? "فاتورة مبيعات" : "فاتورة مشتريات";
+        document.getElementById('modal-info').innerHTML = `التاريخ: ${inv.date}<br>الجهة: ${inv.customer || 'غير محدد'}`;
+        
+        let itemsHtml = "<table style='width:100%; border-collapse:collapse; margin-top:10px;'><thead><tr style='background:#f4f4f4;'><th>المادة</th><th>الكمية</th><th>السعر</th></tr></thead><tbody>";
+        inv.items.forEach(item => { 
+            itemsHtml += `<tr><td>${item.name}</td><td style="text-align:center;">${item.qty}</td><td style="text-align:center;">${(item.price || item.cost).toLocaleString()}</td></tr>`; 
+        });
+        
+        document.getElementById('modal-items-list').innerHTML = itemsHtml + "</tbody></table>";
+        document.getElementById('modal-total').innerText = `المجموع: ${inv.total.toLocaleString()} د.ع`;
+        document.getElementById('detail-modal').style.display = 'flex';
+    }
+
+    function renderInventory() {
+        const container = document.getElementById('inventory-container');
         container.innerHTML = "";
-        if(staffMembers.length === 0) {
-            container.innerHTML = "<p style='text-align:center; color:#999;'>لا يوجد موظفين مسجلين حالياً</p>";
+        if(inventory.length === 0) {
+            container.innerHTML = "<p style='text-align:center; color:#999;'>المخزن فارغ حالياً. أضف مشتريات لتظهر هنا.</p>";
             return;
         }
-        staffMembers.forEach((staff, index) => {
+        inventory.forEach((item, index) => {
             container.innerHTML += `
-                <div class="staff-item">
+                <div class="inventory-item">
                     <div>
-                        <strong>${staff.name}</strong><br>
-                        <small>الحساب: ${staff.user} | الصلاحية: ${staff.role}</small>
+                        <strong>${item.name}</strong><br>
+                        <small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small><br>
+                        <small style="color:blue">كود: ${item.code || '---'}</small>
                     </div>
-                    <button class="edit-btn" style="background:#e74c3c" onclick="deleteStaff(${index})">
-                        <i class="fas fa-trash-alt"></i> حذف
-                    </button>
+                    <div style="display:flex; gap:5px;">
+                        <button class="edit-btn" onclick="openEditItem(${index})"><i class="fas fa-edit"></i></button>
+                        <button class="edit-btn" style="background:#e74c3c" onclick="deleteItemFromInventory(${index})"><i class="fas fa-trash"></i></button>
+                    </div>
                 </div>`;
         });
     }
 
+    // --- بقية وظائف النظام ---
+    function renderStaff() {
+        const container = document.getElementById('staff-list-container');
+        if(!container) return;
+        container.innerHTML = "";
+        staffMembers.forEach((staff, index) => {
+            container.innerHTML += `<div class="staff-item"><div><strong>${staff.name}</strong><br><small>${staff.role}</small></div><button class="edit-btn" style="background:#e74c3c" onclick="deleteStaff(${index})">حذف</button></div>`;
+        });
+    }
+
     function addNewStaff() {
-        const name = document.getElementById('staff-name').value;
-        const user = document.getElementById('staff-user').value;
-        const pass = document.getElementById('staff-pass').value;
-        const role = document.getElementById('staff-role').value;
-
-        if (!name || !user || !pass) return alert("يرجى ملء كافة معلومات الموظف");
-
+        const name = document.getElementById('staff-name').value, user = document.getElementById('staff-user').value, pass = document.getElementById('staff-pass').value, role = document.getElementById('staff-role').value;
+        if (!name || !user || !pass) return alert("أكمل البيانات");
         staffMembers.push({ name, user, pass, role });
         localStorage.setItem('pos_staff', JSON.stringify(staffMembers));
-        
-        alert("تم إنشاء حساب الموظف بنجاح");
-        document.getElementById('staff-name').value = '';
-        document.getElementById('staff-user').value = '';
-        document.getElementById('staff-pass').value = '';
         renderStaff();
     }
 
-    function deleteStaff(index) {
-        if (confirm(`هل أنت متأكد من حذف حساب (${staffMembers[index].name})؟`)) {
-            staffMembers.splice(index, 1);
-            localStorage.setItem('pos_staff', JSON.stringify(staffMembers));
-            renderStaff();
-        }
-    }
+    function deleteStaff(index) { staffMembers.splice(index, 1); localStorage.setItem('pos_staff', JSON.stringify(staffMembers)); renderStaff(); }
 
-    // --- تشغيل الحسابات ---
     function updateAccountsStats() {
         const todayStr = new Date().toLocaleDateString('ar-EG');
         const todaySales = salesInvoices.filter(inv => inv.date.includes(todayStr)).reduce((sum, inv) => sum + inv.total, 0);
-        let todayProfit = 0;
-        salesInvoices.filter(inv => inv.date.includes(todayStr)).forEach(inv => {
-            inv.items.forEach(saleItem => {
-                const stockItem = inventory.find(i => i.name === saleItem.name);
-                const costPrice = stockItem ? (stockItem.cost || 0) : 0;
-                todayProfit += (saleItem.price - costPrice) * saleItem.qty;
-                if(saleItem.discount) todayProfit -= saleItem.discount;
-            });
-        });
         const todayExpTotal = expenses.filter(exp => new Date(exp.date).toLocaleDateString('ar-EG') === todayStr).reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
         document.getElementById('day-sales-total').innerText = todaySales.toLocaleString() + " د.ع";
-        document.getElementById('day-profit-total').innerText = todayProfit.toLocaleString() + " د.ع";
         document.getElementById('day-expenses-total').innerText = todayExpTotal.toLocaleString() + " د.ع";
     }
 
-    // --- حفظ المصاريف ---
     function saveExpense() {
-        const title = document.getElementById('exp-title').value;
-        const amount = document.getElementById('exp-amount').value;
-        const date = document.getElementById('exp-date').value;
-        if (!title || !amount || !date) return alert("يرجى ملء كافة الحقول");
+        const title = document.getElementById('exp-title').value, amount = document.getElementById('exp-amount').value, date = document.getElementById('exp-date').value;
+        if (!title || !amount || !date) return alert("ملء الحقول");
         expenses.push({ title, amount: parseFloat(amount), date });
         localStorage.setItem('pos_expenses', JSON.stringify(expenses));
-        alert("تم حفظ المصروف بنجاح");
-        document.getElementById('exp-title').value = ''; document.getElementById('exp-amount').value = '';
         renderExpenses();
     }
 
@@ -575,7 +693,7 @@
         const container = document.getElementById('expenses-list-container');
         container.innerHTML = "";
         expenses.slice().reverse().forEach(exp => {
-            container.innerHTML += `<div class="staff-item"><span>${exp.title} (${exp.date})</span><strong>${parseFloat(exp.amount).toLocaleString()} د.ع</strong></div>`;
+            container.innerHTML += `<div class="staff-item"><span>${exp.title}</span><strong>${parseFloat(exp.amount).toLocaleString()}</strong></div>`;
         });
     }
 
@@ -586,148 +704,79 @@
         if(id === 'sales-screen') { renderQuickItems(); renderCartTable(); }
         if(id === 'accounts-screen') updateAccountsStats();
         if(id === 'expenses-screen') renderExpenses();
-        if(id === 'staff-management-screen') renderStaff();
         window.scrollTo(0,0); 
     }
 
-    // --- وظائف التصدير ---
-    function shareToWhatsApp() {
-        if (!currentActiveInvoice) return;
-        const info = JSON.parse(localStorage.getItem('pos_store_info')) || {name: "كاشير برو"};
-        let text = `*فاتورة من: ${info.name}*\nالتاريخ: ${currentActiveInvoice.date}\nالجهة: ${currentActiveInvoice.customer}\n--------------------------\n`;
-        currentActiveInvoice.items.forEach(item => { text += `${item.name} | س: ${(item.price || item.cost).toLocaleString()} | ع: ${item.qty}\n`; });
-        text += `--------------------------\n*المجموع الكلي: ${currentActiveInvoice.total.toLocaleString()} د.ع*`;
-        window.open("https://wa.me/?text=" + encodeURIComponent(text), '_blank');
-    }
-
-    function exportToPDF() {
-        const element = document.getElementById('print-area');
-        html2pdf().set({ margin: 1, filename: `invoice_${Date.now()}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' } }).from(element).save();
-    }
-
-    function saveStoreInfo() {
-        localStorage.setItem('pos_store_info', JSON.stringify({ name: document.getElementById('store-name-info').value, address: document.getElementById('store-address-info').value, phone: document.getElementById('store-phone-info').value }));
-        alert("تم حفظ بيانات المحل بنجاح");
-    }
-
-    function loadStoreInfo() {
-        const info = JSON.parse(localStorage.getItem('pos_store_info'));
-        if (info) { document.getElementById('store-name-info').value = info.name || ""; document.getElementById('store-address-info').value = info.address || ""; document.getElementById('store-phone-info').value = info.phone || ""; }
-    }
-
     function updateSalesTotal() {
-        const total = tempSales.reduce((sum, item) => sum + (parseFloat(item.qty) * parseFloat(item.price) - parseFloat(item.discount || 0)), 0);
+        const total = tempSales.reduce((sum, item) => sum + (item.qty * item.price - item.discount), 0);
         document.getElementById('sales-total-text').innerText = `المبلغ الكلي: ${total.toLocaleString()} د.ع`;
         const rate = parseFloat(document.getElementById('usd-rate').value) || 1;
         document.getElementById('usd-total-display').innerText = `ما يعادل: ${(total / rate).toFixed(2)} $`;
-        renderCartTable();
-    } 
-
-    function renderCartTable() {
-        const cartBody = document.getElementById('cart-items-body');
-        const cartContainer = document.getElementById('current-cart-display');
-        if (tempSales.length === 0) { cartContainer.style.display = 'none'; return; }
-        cartContainer.style.display = 'block'; cartBody.innerHTML = "";
-        tempSales.forEach((item, index) => {
-            cartBody.innerHTML += `<tr><td style="text-align:right;"><div>${item.name}</div><small class="text-muted">${item.price.toLocaleString()} د.ع</small></td><td><div style="display:flex; align-items:center; justify-content:center; gap:5px;"><button class="qty-btn" onclick="changeQtyInCart(${index}, 1)">+</button><span style="min-width:20px; font-weight:bold;">${item.qty}</span><button class="qty-btn" onclick="changeQtyInCart(${index}, -1)">-</button></div></td><td style="font-weight:bold;">${(item.price * item.qty - item.discount).toLocaleString()}</td><td><button class="cart-del-btn" onclick="removeItemFromCart(${index})"><i class="fas fa-trash"></i></button></td></tr>`;
-        });
-    }
-
-    function changeQtyInCart(index, delta) {
-        const item = tempSales[index]; const newQty = item.qty + delta;
-        if (newQty <= 0) { removeItemFromCart(index); return; }
-        if (delta > 0 && (inventory.find(i => i.name === item.name)?.qty < newQty)) return alert("الكمية في المخزن غير كافية!");
-        tempSales[index].qty = newQty; updateSalesTotal();
-    }
-
-    function removeItemFromCart(index) { tempSales.splice(index, 1); updateSalesTotal(); }
-
-    function renderReports(type) {
-        const container = document.getElementById('reports-list-container');
-        let data = (type === 'sales') ? salesInvoices : purchaseInvoices;
-        document.getElementById('report-title').innerText = (type === 'sales') ? "سجل المبيعات" : "سجل المشتريات";
-        container.innerHTML = data.length ? "" : "<p style='text-align:center;'>لا يوجد سجلات حالياً</p>";
-        data.slice().reverse().forEach((inv, index) => {
-            const div = document.createElement('div'); div.className = 'report-box';
-            div.style.borderRight = (type === 'sales') ? "5px solid var(--g-sales)" : "5px solid var(--g-purchases)";
-            div.innerHTML = `<div class="report-header"><strong>فاتورة #${inv.id || index + 1}</strong><span>${inv.date}</span></div><div style="display:flex; justify-content:space-between; margin-top:5px;"><small>${inv.customer || 'بدون اسم'}</small><strong style="color:var(--text-dark)">${inv.total.toLocaleString()} د.ع</strong></div>`;
-            div.onclick = () => showInvoiceDetails(inv, type); container.appendChild(div);
-        });
-    }
-
-    function showInvoiceDetails(inv, type) {
-        currentActiveInvoice = inv;
-        const storeInfo = JSON.parse(localStorage.getItem('pos_store_info'));
-        const header = document.getElementById('store-header-print');
-        if(storeInfo?.name) { header.style.display = 'block'; document.getElementById('print-store-name').innerText = storeInfo.name; document.getElementById('print-store-address').innerText = "العنوان: " + storeInfo.address; document.getElementById('print-store-phone').innerText = "هاتف: " + storeInfo.phone; } else { header.style.display = 'none'; }
-        document.getElementById('modal-title').innerText = (type === 'sales') ? "فاتورة مبيعات" : "فاتورة مشتريات";
-        document.getElementById('modal-info').innerHTML = `التاريخ: ${inv.date}<br>الجهة: ${inv.customer || 'غير محدد'}`;
-        let itemsHtml = "<table style='width:100%; border-collapse:collapse; margin-top:10px;'><thead><tr style='background:#f4f4f4;'><th>المادة</th><th>الكمية</th><th>السعر</th></tr></thead><tbody>";
-        inv.items.forEach(item => { itemsHtml += `<tr><td>${item.name}</td><td style="text-align:center;">${item.qty}</td><td style="text-align:center;">${(item.price || item.cost).toLocaleString()}</td></tr>`; });
-        document.getElementById('modal-items-list').innerHTML = itemsHtml + "</tbody></table>";
-        document.getElementById('modal-total').innerText = `المجموع: ${inv.total.toLocaleString()} د.ع`;
-        document.getElementById('detail-modal').style.display = 'flex';
-    }
-
-    function closeModal() { document.getElementById('detail-modal').style.display = 'none'; }
-
-    function initializeDashboard() {
-        if (currentUser) { document.getElementById('main-header').style.display = 'flex'; showSection('home-screen'); updateUIAfterLogin(); updateQuickStats(); } else { document.getElementById('main-header').style.display = 'none'; showSection('auth-screen'); }
-        if(document.getElementById('exp-date')) document.getElementById('exp-date').valueAsDate = new Date();
     }
 
     function addItemToSale() {
-        const name = document.getElementById('s-item-name').value;
-        const qty = parseFloat(document.getElementById('s-qty').value);
-        const price = parseFloat(document.getElementById('s-price').value);
-        if (!name || !qty || !price) return alert("يرجى اختيار مادة");
-        if ((inventory.find(i => i.name === name)?.qty < qty)) return alert("الكمية في المخزن غير كافية!");
+        const name = document.getElementById('s-item-name').value, qty = parseFloat(document.getElementById('s-qty').value), price = parseFloat(document.getElementById('s-price').value);
+        if (!name || isNaN(qty) || isNaN(price)) return alert("اختر مادة");
+        const stock = inventory.find(i => i.name === name);
+        if(!stock || stock.qty < qty) return alert("الكمية غير كافية بالمخزن");
+        
         let disc = (document.getElementById('s-discount-type').value === 'amount') ? parseFloat(document.getElementById('s-discount-val').value) || 0 : (price * qty) * ((parseFloat(document.getElementById('s-discount-val').value) || 0) / 100);
-        const existing = tempSales.find(i => i.name === name);
-        if(existing) { existing.qty += qty; } else { tempSales.push({ name, qty, price, discount: disc, barcode: document.getElementById('s-barcode').value }); }
-        updateSalesTotal();
-        document.getElementById('s-barcode').value = ''; document.getElementById('s-item-name').value = ''; document.getElementById('s-qty').value = '1'; document.getElementById('s-price').value = ''; document.getElementById('s-discount-val').value = '0';
+        tempSales.push({ name, qty, price, discount: disc });
+        renderCartTable(); updateSalesTotal();
+    }
+
+    function renderCartTable() {
+        const body = document.getElementById('cart-items-body');
+        document.getElementById('current-cart-display').style.display = tempSales.length ? 'block' : 'none';
+        body.innerHTML = "";
+        tempSales.forEach((item, i) => {
+            body.innerHTML += `<tr><td>${item.name}</td><td>${item.qty}</td><td>${(item.qty*item.price-item.discount).toLocaleString()}</td><td><button onclick="tempSales.splice(${i},1);renderCartTable();updateSalesTotal();">X</button></td></tr>`;
+        });
     }
 
     function saveSale() {
         if (!tempSales.length) return alert("السلة فارغة");
-        const invoice = { id: Date.now(), customer: document.getElementById('s-customer').value || "زبون نقدي", date: new Date().toLocaleString('ar-EG'), items: [...tempSales], total: tempSales.reduce((sum, item) => sum + (item.qty * item.price - item.discount), 0) };
+        const total = tempSales.reduce((sum, item) => sum + (item.qty * item.price - item.discount), 0);
+        const invoice = { id: Date.now(), customer: document.getElementById('s-customer').value || "زبون نقدي", date: new Date().toLocaleString('ar-EG'), items: [...tempSales], total };
         salesInvoices.push(invoice);
-        tempSales.forEach(s => { let st = inventory.find(i => i.name === s.name); if (st) st.qty -= s.qty; });
+        tempSales.forEach(s => { let st = inventory.find(i => i.name === s.name); if(st) st.qty -= s.qty; });
         localStorage.setItem('pos_inventory', JSON.stringify(inventory));
         localStorage.setItem('pos_s_invoices', JSON.stringify(salesInvoices));
-        alert("تم البيع بنجاح"); tempSales = []; updateSalesTotal(); showSection('home-screen'); updateQuickStats();
+        tempSales = []; alert("تم البيع"); showSection('home-screen'); updateQuickStats();
     }
 
-    function toggleAuthMode(isRegister) { document.getElementById('login-form').style.display = isRegister ? 'none' : 'block'; document.getElementById('register-form').style.display = isRegister ? 'block' : 'none'; document.getElementById('auth-title').innerText = isRegister ? 'إنشاء حساب جديد' : 'تسجيل الدخول'; }
-    function handleRegister() { const name = document.getElementById('reg-name').value, email = document.getElementById('reg-email').value, pass = document.getElementById('reg-pass').value; if (!name || !email || !pass) return alert("يرجى ملء الحقول"); users.push({ name, email, pass }); localStorage.setItem('pos_users', JSON.stringify(users)); alert("تم الإنشاء"); toggleAuthMode(false); }
-    function handleLogin() { const email = document.getElementById('login-email').value, pass = document.getElementById('login-pass').value; const user = users.find(u => u.email === email && u.pass === pass); if (user) { currentUser = user; sessionStorage.setItem('pos_logged_in_user', JSON.stringify(user)); location.reload(); } else alert("خطأ بالدخول"); }
-    function logout() { sessionStorage.removeItem('pos_logged_in_user'); location.reload(); }
-    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('active'); const overlay = document.getElementById('overlay'); overlay.style.display = overlay.style.display === 'block' ? 'none' : 'block'; }
-    function stopCamera() { if (html5QrCode) { html5QrCode.stop().then(() => html5QrCode = null).catch(() => {}); } }
-    function updateUIAfterLogin() { document.getElementById('sidebar-store-name').innerText = currentUser.name; document.getElementById('sidebar-user-login').innerHTML = `<i class="fas fa-user-circle"></i> ${currentUser.email}`; }
-    function updateQuickStats() { const todayAr = new Date().toLocaleDateString('ar-EG'); const todaySales = salesInvoices.filter(inv => inv.date.includes(todayAr)).reduce((sum, i) => sum + i.total, 0); document.getElementById('quick-day-sales').innerText = todaySales.toLocaleString() + " د.ع"; }
-    function searchProductByBarcode(barcode) { const item = inventory.find(i => i.barcode === barcode); if (item) { document.getElementById('s-item-name').value = item.name; document.getElementById('s-price').value = item.price; } }
-    function renderQuickItems() { const container = document.getElementById('quick-items-container'); container.innerHTML = ""; inventory.slice(0, 6).forEach(item => { const div = document.createElement('div'); div.className = 'quick-item'; div.innerText = item.name; div.onclick = () => { searchProductByBarcode(item.barcode); document.getElementById('s-barcode').value = item.barcode; }; container.appendChild(div); }); }
-    function toggleCamera(readerId, inputId) { const box = document.getElementById('cam-box-' + readerId); if (box.style.display === 'block') { stopCamera(); box.style.display = 'none'; } else { box.style.display = 'block'; html5QrCode = new Html5Qrcode(readerId); html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (decodedText) => { document.getElementById(inputId).value = decodedText; if(inputId === 's-barcode') searchProductByBarcode(decodedText); stopCamera(); box.style.display = 'none'; }).catch(err => alert("كاميرا غير متاحة")); } }
-    
-    function renderInventory() {
-        const container = document.getElementById('inventory-container');
+    function renderQuickItems() {
+        const container = document.getElementById('quick-items-container');
         container.innerHTML = "";
-        inventory.forEach((item, index) => {
-            container.innerHTML += `
-                <div class="inventory-item">
-                    <div>
-                        <strong>${item.name}</strong><br>
-                        <small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small>
-                    </div>
-                    <div style="display:flex; gap:5px;">
-                        <button class="edit-btn" onclick="openEditItem(${index})"><i class="fas fa-edit"></i></button>
-                        <button class="edit-btn" style="background:#e74c3c" onclick="deleteItemFromInventory(${index})"><i class="fas fa-trash"></i></button>
-                    </div>
-                </div>`;
+        inventory.slice(0, 6).forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'quick-item';
+            div.innerText = item.name;
+            div.onclick = () => {
+                document.getElementById('s-barcode').value = item.barcode || "";
+                document.getElementById('s-code').value = item.code || "";
+                document.getElementById('s-item-name').value = item.name;
+                document.getElementById('s-price').value = item.price;
+            };
+            container.appendChild(div);
         });
     }
+
+    function toggleCamera(readerId, inputId) {
+        const box = document.getElementById('cam-box-' + readerId);
+        if (box.style.display === 'block') { stopCamera(); box.style.display = 'none'; }
+        else {
+            box.style.display = 'block';
+            html5QrCode = new Html5Qrcode(readerId);
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (text) => {
+                document.getElementById(inputId).value = text;
+                if(inputId === 's-barcode') searchProductByBarcode(text);
+                stopCamera(); box.style.display = 'none';
+            }).catch(() => alert("كاميرا غير متاحة"));
+        }
+    }
+
+    function stopCamera() { if (html5QrCode) { html5QrCode.stop().then(() => html5QrCode = null).catch(() => {}); } }
 
     function openEditItem(index) {
         currentEditIndex = index;
@@ -738,58 +787,75 @@
         document.getElementById('edit-modal').style.display = 'flex';
     }
 
-    function closeEditModal() {
-        document.getElementById('edit-modal').style.display = 'none';
-    }
-
     function saveInventoryEdit() {
-        if (currentEditIndex === null) return;
-        const newQty = parseFloat(document.getElementById('edit-item-qty').value);
-        const newPrice = parseFloat(document.getElementById('edit-item-price').value);
-        if (isNaN(newQty) || isNaN(newPrice)) return alert("يرجى إدخال قيم صحيحة");
-        inventory[currentEditIndex].qty = newQty;
-        inventory[currentEditIndex].price = newPrice;
+        inventory[currentEditIndex].qty = parseFloat(document.getElementById('edit-item-qty').value);
+        inventory[currentEditIndex].price = parseFloat(document.getElementById('edit-item-price').value);
         localStorage.setItem('pos_inventory', JSON.stringify(inventory));
-        renderInventory();
-        closeEditModal();
-        alert("تم تحديث البيانات");
+        renderInventory(); document.getElementById('edit-modal').style.display='none';
     }
 
-    function deleteItemFromInventory(index) {
-        if (confirm(`هل أنت متأكد من حذف (${inventory[index].name}) نهائياً؟`)) {
-            inventory.splice(index, 1);
-            localStorage.setItem('pos_inventory', JSON.stringify(inventory));
-            renderInventory();
+    function deleteItemFromInventory(i) { if(confirm("حذف؟")) { inventory.splice(i,1); localStorage.setItem('pos_inventory', JSON.stringify(inventory)); renderInventory(); } }
+
+    function handleLogin() {
+        const email = document.getElementById('login-email').value, pass = document.getElementById('login-pass').value;
+        const user = users.find(u => u.email === email && u.pass === pass);
+        if (user) { sessionStorage.setItem('pos_logged_in_user', JSON.stringify(user)); location.reload(); } else alert("خطأ");
+    }
+
+    function handleRegister() {
+        const name = document.getElementById('reg-name').value, email = document.getElementById('reg-email').value, pass = document.getElementById('reg-pass').value;
+        users.push({ name, email, pass }); localStorage.setItem('pos_users', JSON.stringify(users)); toggleAuthMode(false);
+    }
+
+    function logout() { sessionStorage.removeItem('pos_logged_in_user'); location.reload(); }
+    function toggleAuthMode(isReg) { document.getElementById('login-form').style.display=isReg?'none':'block'; document.getElementById('register-form').style.display=isReg?'block':'none'; }
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('active'); const o = document.getElementById('overlay'); o.style.display = o.style.display==='block'?'none':'block'; }
+    function initializeDashboard() {
+        if (currentUser) { 
+            document.getElementById('main-header').style.display = 'flex'; 
+            showSection('home-screen'); 
+            document.getElementById('sidebar-store-name').innerText = currentUser.name;
+            updateQuickStats();
         }
     }
+    function updateQuickStats() {
+        const todayAr = new Date().toLocaleDateString('ar-EG');
+        const sales = salesInvoices.filter(inv => inv.date.includes(todayAr)).reduce((s, i) => s + i.total, 0);
+        document.getElementById('quick-day-sales').innerText = sales.toLocaleString() + " د.ع";
+    }
+    function closeModal() { document.getElementById('detail-modal').style.display = 'none'; }
+    function closeEditModal() { document.getElementById('edit-modal').style.display = 'none'; }
+    function loadStoreInfo() {
+        const info = JSON.parse(localStorage.getItem('pos_store_info'));
+        if(info) {
+            document.getElementById('store-name-info').value = info.name;
+            document.getElementById('store-address-info').value = info.address;
+            document.getElementById('store-phone-info').value = info.phone;
+        }
+    }
+    function saveStoreInfo() {
+        localStorage.setItem('pos_store_info', JSON.stringify({
+            name: document.getElementById('store-name-info').value,
+            address: document.getElementById('store-address-info').value,
+            phone: document.getElementById('store-phone-info').value
+        }));
+        alert("تم الحفظ");
+    }
 
-    function renderMonthlyReport() { alert("جاري العمل على التقرير الشهري"); }
-    function loadLinkSettings() {} function saveLinkSettings() {} function checkNotifications() {} function loadUpdateSettings() {} function addNewSubscription() { alert("تم حفظ الاشتراك"); } function savePurchase() { alert("تم حفظ فاتورة المشتريات"); }
-
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            const swCode = `
-                const CACHE_NAME = 'cashier-pro-v1.6';
-                const ASSETS = [
-                    '${window.location.pathname}',
-                    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-                    'https://unpkg.com/html5-qrcode',
-                    'https://cdn.jsdelivr.net/npm/chart.js',
-                    'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
-                    'https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap'
-                ];
-                self.addEventListener('install', (e) => {
-                    e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
-                });
-                self.addEventListener('fetch', (e) => {
-                    e.respondWith(caches.match(e.request).then((res) => res || fetch(e.request)));
-                });
-            `;
-            const blob = new Blob([swCode], { type: 'application/javascript' });
-            const swUrl = URL.createObjectURL(blob);
-            navigator.serviceWorker.register(swUrl).then(() => console.log('Offline Ready'));
+    function renderReports(type) {
+        const container = document.getElementById('reports-list-container');
+        let data = (type === 'sales') ? salesInvoices : purchaseInvoices;
+        container.innerHTML = "";
+        data.slice().reverse().forEach(inv => {
+            const div = document.createElement('div');
+            div.className = 'report-box';
+            div.innerHTML = `<strong>${inv.date}</strong><br>الجهة: ${inv.customer} | المجموع: ${inv.total.toLocaleString()}`;
+            div.onclick = () => showInvoiceDetails(inv, type);
+            container.appendChild(div);
         });
     }
+
+    function checkNotifications() {} function loadLinkSettings() {} function loadUpdateSettings() {} function saveLinkSettings() {} function addNewSubscription() {} function renderMonthlyReport() {} function shareToWhatsApp() {} function exportToPDF() {}
 </script>
 </body>
 </html>
