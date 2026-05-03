@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>كاشير برو - الواجهة السحابية</title>
+    <link rel="manifest" href="data:application/manifest+json,{'name':'Cashier Pro','short_name':'Cashier','start_url':'.','display':'standalone','background_color':'#f4f6f9','theme_color':'#2c3e50'}">
+    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -714,6 +716,32 @@
 
     function renderMonthlyReport() { alert("جاري العمل على التقرير الشهري"); }
     function loadLinkSettings() {} function saveLinkSettings() {} function checkNotifications() {} function loadUpdateSettings() {} function renderStaff() {} function addNewSubscription() { alert("تم حفظ الاشتراك"); } function addNewStaff() { alert("تم إنشاء الحساب"); } function savePurchase() { alert("تم حفظ فاتورة المشتريات"); }
+
+    // --- كود العمل بدون إنترنت (Offline Mode) ---
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            const swCode = `
+                const CACHE_NAME = 'cashier-pro-v1.6';
+                const ASSETS = [
+                    '${window.location.pathname}',
+                    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+                    'https://unpkg.com/html5-qrcode',
+                    'https://cdn.jsdelivr.net/npm/chart.js',
+                    'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
+                    'https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap'
+                ];
+                self.addEventListener('install', (e) => {
+                    e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
+                });
+                self.addEventListener('fetch', (e) => {
+                    e.respondWith(caches.match(e.request).then((res) => res || fetch(e.request)));
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            navigator.serviceWorker.register(swUrl).then(() => console.log('Offline Ready'));
+        });
+    }
 </script>
 </body>
 </html>
