@@ -490,6 +490,55 @@
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
 
+    // --- وظائف الموظفين المحدثة ---
+    function renderStaff() {
+        const container = document.getElementById('staff-list-container');
+        if(!container) return;
+        container.innerHTML = "";
+        if(staffMembers.length === 0) {
+            container.innerHTML = "<p style='text-align:center; color:#999;'>لا يوجد موظفين مسجلين حالياً</p>";
+            return;
+        }
+        staffMembers.forEach((staff, index) => {
+            container.innerHTML += `
+                <div class="staff-item">
+                    <div>
+                        <strong>${staff.name}</strong><br>
+                        <small>الحساب: ${staff.user} | الصلاحية: ${staff.role}</small>
+                    </div>
+                    <button class="edit-btn" style="background:#e74c3c" onclick="deleteStaff(${index})">
+                        <i class="fas fa-trash-alt"></i> حذف
+                    </button>
+                </div>`;
+        });
+    }
+
+    function addNewStaff() {
+        const name = document.getElementById('staff-name').value;
+        const user = document.getElementById('staff-user').value;
+        const pass = document.getElementById('staff-pass').value;
+        const role = document.getElementById('staff-role').value;
+
+        if (!name || !user || !pass) return alert("يرجى ملء كافة معلومات الموظف");
+
+        staffMembers.push({ name, user, pass, role });
+        localStorage.setItem('pos_staff', JSON.stringify(staffMembers));
+        
+        alert("تم إنشاء حساب الموظف بنجاح");
+        document.getElementById('staff-name').value = '';
+        document.getElementById('staff-user').value = '';
+        document.getElementById('staff-pass').value = '';
+        renderStaff();
+    }
+
+    function deleteStaff(index) {
+        if (confirm(`هل أنت متأكد من حذف حساب (${staffMembers[index].name})؟`)) {
+            staffMembers.splice(index, 1);
+            localStorage.setItem('pos_staff', JSON.stringify(staffMembers));
+            renderStaff();
+        }
+    }
+
     // --- تشغيل الحسابات ---
     function updateAccountsStats() {
         const todayStr = new Date().toLocaleDateString('ar-EG');
@@ -537,6 +586,7 @@
         if(id === 'sales-screen') { renderQuickItems(); renderCartTable(); }
         if(id === 'accounts-screen') updateAccountsStats();
         if(id === 'expenses-screen') renderExpenses();
+        if(id === 'staff-management-screen') renderStaff();
         window.scrollTo(0,0); 
     }
 
@@ -661,7 +711,6 @@
     function renderQuickItems() { const container = document.getElementById('quick-items-container'); container.innerHTML = ""; inventory.slice(0, 6).forEach(item => { const div = document.createElement('div'); div.className = 'quick-item'; div.innerText = item.name; div.onclick = () => { searchProductByBarcode(item.barcode); document.getElementById('s-barcode').value = item.barcode; }; container.appendChild(div); }); }
     function toggleCamera(readerId, inputId) { const box = document.getElementById('cam-box-' + readerId); if (box.style.display === 'block') { stopCamera(); box.style.display = 'none'; } else { box.style.display = 'block'; html5QrCode = new Html5Qrcode(readerId); html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (decodedText) => { document.getElementById(inputId).value = decodedText; if(inputId === 's-barcode') searchProductByBarcode(decodedText); stopCamera(); box.style.display = 'none'; }).catch(err => alert("كاميرا غير متاحة")); } }
     
-    // --- وظائف المخزن المطورة (تعديل وحذف) ---
     function renderInventory() {
         const container = document.getElementById('inventory-container');
         container.innerHTML = "";
@@ -715,9 +764,8 @@
     }
 
     function renderMonthlyReport() { alert("جاري العمل على التقرير الشهري"); }
-    function loadLinkSettings() {} function saveLinkSettings() {} function checkNotifications() {} function loadUpdateSettings() {} function renderStaff() {} function addNewSubscription() { alert("تم حفظ الاشتراك"); } function addNewStaff() { alert("تم إنشاء الحساب"); } function savePurchase() { alert("تم حفظ فاتورة المشتريات"); }
+    function loadLinkSettings() {} function saveLinkSettings() {} function checkNotifications() {} function loadUpdateSettings() {} function addNewSubscription() { alert("تم حفظ الاشتراك"); } function savePurchase() { alert("تم حفظ فاتورة المشتريات"); }
 
-    // --- كود العمل بدون إنترنت (Offline Mode) ---
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             const swCode = `
