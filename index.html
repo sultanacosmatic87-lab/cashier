@@ -483,6 +483,7 @@
     let tempSales = [];
     let html5QrCode = null; 
     let currentActiveInvoice = null; 
+    let currentEditIndex = null;
 
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
@@ -657,7 +658,60 @@
     function searchProductByBarcode(barcode) { const item = inventory.find(i => i.barcode === barcode); if (item) { document.getElementById('s-item-name').value = item.name; document.getElementById('s-price').value = item.price; } }
     function renderQuickItems() { const container = document.getElementById('quick-items-container'); container.innerHTML = ""; inventory.slice(0, 6).forEach(item => { const div = document.createElement('div'); div.className = 'quick-item'; div.innerText = item.name; div.onclick = () => { searchProductByBarcode(item.barcode); document.getElementById('s-barcode').value = item.barcode; }; container.appendChild(div); }); }
     function toggleCamera(readerId, inputId) { const box = document.getElementById('cam-box-' + readerId); if (box.style.display === 'block') { stopCamera(); box.style.display = 'none'; } else { box.style.display = 'block'; html5QrCode = new Html5Qrcode(readerId); html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (decodedText) => { document.getElementById(inputId).value = decodedText; if(inputId === 's-barcode') searchProductByBarcode(decodedText); stopCamera(); box.style.display = 'none'; }).catch(err => alert("كاميرا غير متاحة")); } }
-    function renderInventory() { const container = document.getElementById('inventory-container'); container.innerHTML = ""; inventory.forEach(item => { container.innerHTML += `<div class="inventory-item"><div><strong>${item.name}</strong><br><small>الكمية: ${item.qty} | السعر: ${item.price}</small></div></div>`; }); }
+    
+    // --- وظائف المخزن المطورة (تعديل وحذف) ---
+    function renderInventory() {
+        const container = document.getElementById('inventory-container');
+        container.innerHTML = "";
+        inventory.forEach((item, index) => {
+            container.innerHTML += `
+                <div class="inventory-item">
+                    <div>
+                        <strong>${item.name}</strong><br>
+                        <small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small>
+                    </div>
+                    <div style="display:flex; gap:5px;">
+                        <button class="edit-btn" onclick="openEditItem(${index})"><i class="fas fa-edit"></i></button>
+                        <button class="edit-btn" style="background:#e74c3c" onclick="deleteItemFromInventory(${index})"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>`;
+        });
+    }
+
+    function openEditItem(index) {
+        currentEditIndex = index;
+        const item = inventory[index];
+        document.getElementById('edit-item-name').innerText = item.name;
+        document.getElementById('edit-item-qty').value = item.qty;
+        document.getElementById('edit-item-price').value = item.price;
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+
+    function closeEditModal() {
+        document.getElementById('edit-modal').style.display = 'none';
+    }
+
+    function saveInventoryEdit() {
+        if (currentEditIndex === null) return;
+        const newQty = parseFloat(document.getElementById('edit-item-qty').value);
+        const newPrice = parseFloat(document.getElementById('edit-item-price').value);
+        if (isNaN(newQty) || isNaN(newPrice)) return alert("يرجى إدخال قيم صحيحة");
+        inventory[currentEditIndex].qty = newQty;
+        inventory[currentEditIndex].price = newPrice;
+        localStorage.setItem('pos_inventory', JSON.stringify(inventory));
+        renderInventory();
+        closeEditModal();
+        alert("تم تحديث البيانات");
+    }
+
+    function deleteItemFromInventory(index) {
+        if (confirm(`هل أنت متأكد من حذف (${inventory[index].name}) نهائياً؟`)) {
+            inventory.splice(index, 1);
+            localStorage.setItem('pos_inventory', JSON.stringify(inventory));
+            renderInventory();
+        }
+    }
+
     function renderMonthlyReport() { alert("جاري العمل على التقرير الشهري"); }
     function loadLinkSettings() {} function saveLinkSettings() {} function checkNotifications() {} function loadUpdateSettings() {} function renderStaff() {} function addNewSubscription() { alert("تم حفظ الاشتراك"); } function addNewStaff() { alert("تم إنشاء الحساب"); } function savePurchase() { alert("تم حفظ فاتورة المشتريات"); }
 </script>
