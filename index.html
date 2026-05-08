@@ -442,6 +442,7 @@
         <div class="btn-row" style="margin-bottom:20px; flex-wrap: wrap;">
             <button class="btn-action" style="background:var(--g-purchases)" onclick="renderReports('purchases')">فواتير المشتريات</button>
             <button class="btn-action" style="background:var(--g-sales)" onclick="renderReports('sales')">فواتير المبيعات</button>
+            <button class="btn-action" style="background:var(--g-accounts)" onclick="renderDetailedDailyReport()">تقرير اليوم المفصل</button>
             <button class="btn-action" style="background:var(--g-reports)" onclick="renderMonthlyReport()">تقرير شهري</button>
         </div>
         <div class="inner-card">
@@ -923,6 +924,7 @@
 
     function renderReports(type) {
         const container = document.getElementById('reports-list-container');
+        document.getElementById('report-title').innerText = (type === 'sales') ? "سجل فواتير المبيعات" : "سجل فواتير المشتريات";
         let data = (type === 'sales') ? salesInvoices : purchaseInvoices;
         container.innerHTML = "";
         data.slice().reverse().forEach(inv => {
@@ -931,6 +933,59 @@
             div.onclick = () => showInvoiceDetails(inv, type);
             container.appendChild(div);
         });
+    }
+
+    // --- وظيفة تقرير المبيعات اليومي الجديد ---
+    function renderDetailedDailyReport() {
+        const container = document.getElementById('reports-list-container');
+        document.getElementById('report-title').innerText = "التقرير اليومي المفصل للمبيعات";
+        const todayStr = new Date().toLocaleDateString('ar-EG');
+        const todaySales = salesInvoices.filter(inv => inv.date.includes(todayStr));
+        
+        if (todaySales.length === 0) {
+            container.innerHTML = "<p style='text-align:center; padding:20px;'>لا توجد مبيعات لهذا اليوم حتى الآن.</p>";
+            return;
+        }
+
+        let totalGross = 0;
+        let totalDiscount = 0;
+        let totalNetProfit = 0;
+
+        todaySales.forEach(inv => {
+            totalGross += inv.total;
+            inv.items.forEach(item => {
+                totalDiscount += (item.discount || 0);
+                const cleanName = item.name.replace("مرتجع: ", "");
+                const st = inventory.find(i => i.name === cleanName);
+                if (st) {
+                    let profit = (item.price - st.cost) * item.qty - (item.discount || 0);
+                    if (inv.total < 0) totalNetProfit -= Math.abs(profit); else totalNetProfit += profit;
+                }
+            });
+        });
+
+        let html = `
+            <div style="background:#fff3f6; padding:15px; border-radius:15px; margin-bottom:15px; border:1px solid #ffcad7;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>إجمالي مبيعات اليوم:</span><strong>${totalGross.toLocaleString()} د.ع</strong></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>إجمالي الخصومات:</span><strong>${totalDiscount.toLocaleString()} د.ع</strong></div>
+                <div style="display:flex; justify-content:space-between; color:#27ae60;"><span>صافي الأرباح (تقديري):</span><strong>${totalNetProfit.toLocaleString()} د.ع</strong></div>
+            </div>
+            <h4 style="margin-bottom:10px;">تفاصيل فواتير اليوم (${todaySales.length}):</h4>
+        `;
+
+        todaySales.slice().reverse().forEach(inv => {
+            html += `
+                <div class="report-box" onclick='showInvoiceDetails(${JSON.stringify(inv)}, "sales")'>
+                    <div style="display:flex; justify-content:space-between;">
+                        <strong>${inv.date.split(',')[1]}</strong>
+                        <span style="color:#e67e22; font-weight:bold;">${inv.total.toLocaleString()} د.ع</span>
+                    </div>
+                    <small>الزبون: ${inv.customer}</small>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
     }
 
     function exportBackup() {
