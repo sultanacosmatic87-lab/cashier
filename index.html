@@ -561,12 +561,35 @@
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
 
+    // --- نظام تسجيل المدير (حماية: لمرة واحدة فقط) ---
+    function handleRegister() {
+        const name = document.getElementById('reg-name').value;
+        const email = document.getElementById('reg-email').value;
+        const pass = document.getElementById('reg-pass').value;
+
+        if (!name || !email || !pass) {
+            return alert("يرجى ملء كافة الحقول");
+        }
+
+        // الكود الجديد: التحقق من وجود أي مدير مسجل مسبقاً
+        if (users.length > 0) {
+            alert("عذراً، النظام ممتلك بالفعل من قبل مدير سابق. لا يمكن تسجيل مدير جديد.");
+            return;
+        }
+
+        // إضافة المدير الأول فقط
+        users.push({ name, email, pass }); 
+        localStorage.setItem('pos_users', JSON.stringify(users)); 
+        
+        alert("تم إنشاء حساب المدير بنجاح! يمكنك الآن تسجيل الدخول.");
+        toggleAuthMode(false);
+    }
+
     // --- نظام الموظفين والصلاحيات ---
     function handleLogin() {
         const userInput = document.getElementById('login-email').value;
         const passInput = document.getElementById('login-pass').value;
 
-        // التحقق من حساب المدير الرئيسي
         let user = users.find(u => (u.email === userInput || u.name === userInput) && u.pass === passInput);
         if (user) {
             user.role = "كامل الصلاحيات";
@@ -575,7 +598,6 @@
             return;
         }
 
-        // التحقق من حسابات الموظفين
         let staff = staffMembers.find(s => s.user === userInput && s.pass === passInput);
         if (staff) {
             sessionStorage.setItem('pos_logged_in_user', JSON.stringify(staff));
@@ -646,7 +668,6 @@
         }
     }
 
-    // --- الوظائف الأساسية ---
     function searchProductForReturn(barcode) {
         if(!barcode) return;
         const item = inventory.find(i => i.barcode === barcode);
@@ -673,74 +694,33 @@
         const qty = parseFloat(document.getElementById('ret-qty').value);
         const name = document.getElementById('ret-item-name').value;
         const price = parseFloat(document.getElementById('ret-price').value);
-
         if(!name || isNaN(qty)) return alert("يرجى اختيار مادة صالحة");
-
         const stockItem = inventory.find(i => i.name === name);
-        if(stockItem) {
-            stockItem.qty += qty;
-            localStorage.setItem('pos_inventory', JSON.stringify(inventory));
-        }
-
-        const returnEntry = {
-            id: Date.now(),
-            name: name,
-            qty: qty,
-            price: price,
-            total: qty * price,
-            date: new Date().toLocaleString('ar-EG')
-        };
+        if(stockItem) { stockItem.qty += qty; localStorage.setItem('pos_inventory', JSON.stringify(inventory)); }
+        const returnEntry = { id: Date.now(), name: name, qty: qty, price: price, total: qty * price, date: new Date().toLocaleString('ar-EG') };
         returnsLog.push(returnEntry);
         localStorage.setItem('pos_returns', JSON.stringify(returnsLog));
-
-        const returnInvoice = {
-            id: "RET-" + Date.now(),
-            customer: "مرتجع بضاعة",
-            date: new Date().toLocaleString('ar-EG'),
-            items: [{ name: "مرتجع: " + name, qty: qty, price: price, discount: 0 }],
-            total: -(qty * price) 
-        };
+        const returnInvoice = { id: "RET-" + Date.now(), customer: "مرتجع بضاعة", date: new Date().toLocaleString('ar-EG'), items: [{ name: "مرتجع: " + name, qty: qty, price: price, discount: 0 }], total: -(qty * price) };
         salesInvoices.push(returnInvoice);
         localStorage.setItem('pos_s_invoices', JSON.stringify(salesInvoices));
-
-        alert("تم استرجاع المادة وإعادتها للمخزن بنجاح ✅");
-        
-        document.getElementById('ret-barcode').value = "";
-        document.getElementById('ret-code').value = "";
-        document.getElementById('ret-item-name').value = "";
-        document.getElementById('ret-qty').value = "1";
-        document.getElementById('ret-price').value = "";
-        
-        renderReturnsLog();
-        updateQuickStats();
+        alert("تم استرجاع المادة بنجاح ✅");
+        document.getElementById('ret-barcode').value = ""; document.getElementById('ret-code').value = ""; document.getElementById('ret-item-name').value = ""; document.getElementById('ret-qty').value = "1"; document.getElementById('ret-price').value = "";
+        renderReturnsLog(); updateQuickStats();
     }
 
     function renderReturnsLog() {
         const container = document.getElementById('returns-log-container');
-        if(!container) return;
-        container.innerHTML = "";
-        returnsLog.slice().reverse().forEach(ret => {
-            container.innerHTML += `<div class="staff-item"><span>${ret.name} (${ret.qty})</span><strong style="color:#d11d5d">-${ret.total.toLocaleString()} د.ع</strong></div>`;
-        });
+        if(!container) return; container.innerHTML = "";
+        returnsLog.slice().reverse().forEach(ret => { container.innerHTML += `<div class="staff-item"><span>${ret.name} (${ret.qty})</span><strong style="color:#d11d5d">-${ret.total.toLocaleString()} د.ع</strong></div>`; });
     }
 
     function addItemToPurchase() {
-        const barcode = document.getElementById('p-barcode').value;
-        const code = document.getElementById('p-code').value; 
-        const name = document.getElementById('p-item-name').value;
-        const qty = parseFloat(document.getElementById('p-qty').value);
-        const cost = parseFloat(document.getElementById('p-cost').value);
-        const price = parseFloat(document.getElementById('p-price').value);
+        const barcode = document.getElementById('p-barcode').value, code = document.getElementById('p-code').value, name = document.getElementById('p-item-name').value, qty = parseFloat(document.getElementById('p-qty').value), cost = parseFloat(document.getElementById('p-cost').value), price = parseFloat(document.getElementById('p-price').value);
         if (!name || isNaN(qty) || isNaN(cost) || isNaN(price)) return alert("يرجى ملء بيانات المادة كاملة");
         tempPurchases.push({ barcode, code, name, qty, cost, price });
         const total = tempPurchases.reduce((sum, item) => sum + (item.qty * item.cost), 0);
         document.getElementById('purchase-total-text').innerText = `المبلغ الكلي: ${total.toLocaleString()} د.ع`;
-        document.getElementById('p-barcode').value = '';
-        document.getElementById('p-code').value = '';
-        document.getElementById('p-item-name').value = '';
-        document.getElementById('p-qty').value = '';
-        document.getElementById('p-cost').value = '';
-        document.getElementById('p-price').value = '';
+        document.getElementById('p-barcode').value = ''; document.getElementById('p-code').value = ''; document.getElementById('p-item-name').value = ''; document.getElementById('p-qty').value = ''; document.getElementById('p-cost').value = ''; document.getElementById('p-price').value = '';
         alert("تمت إضافة المادة");
     }
 
@@ -756,11 +736,7 @@
             else { inventory.push({ barcode: newItem.barcode, code: newItem.code, name: newItem.name, qty: newItem.qty, cost: newItem.cost, price: newItem.price }); }
         });
         localStorage.setItem('pos_inventory', JSON.stringify(inventory));
-        alert("تم حفظ الفاتورة");
-        tempPurchases = [];
-        document.getElementById('purchase-total-text').innerText = "المبلغ الكلي: 0 د.ع";
-        showSection('home-screen');
-        updateQuickStats();
+        alert("تم حفظ الفاتورة"); tempPurchases = []; document.getElementById('purchase-total-text').innerText = "المبلغ الكلي: 0 د.ع"; showSection('home-screen'); updateQuickStats();
     }
 
     function searchProductByBarcode(barcode) { if(!barcode) return; const item = inventory.find(i => i.barcode === barcode); if (item) { document.getElementById('s-item-name').value = item.name; document.getElementById('s-price').value = item.price; document.getElementById('s-qty').focus(); } }
@@ -784,25 +760,15 @@
     }
 
     function renderInventory(searchTerm = "") {
-        const container = document.getElementById('inventory-container');
-        container.innerHTML = "";
-        const filteredInventory = inventory.filter(item => {
-            const term = searchTerm.toLowerCase();
-            return ( (item.name && item.name.toLowerCase().includes(term)) || (item.barcode && item.barcode.includes(term)) || (item.code && item.code.includes(term)) );
-        });
+        const container = document.getElementById('inventory-container'); container.innerHTML = "";
+        const filteredInventory = inventory.filter(item => { const term = searchTerm.toLowerCase(); return ( (item.name && item.name.toLowerCase().includes(term)) || (item.barcode && item.barcode.includes(term)) || (item.code && item.code.includes(term)) ); });
         if(filteredInventory.length === 0) { container.innerHTML = "<p style='text-align:center; color:#999;'>لا توجد مواد مطابقة.</p>"; return; }
         filteredInventory.forEach((item) => {
             const originalIndex = inventory.indexOf(item);
             container.innerHTML += `
                 <div class="inventory-item">
-                    <div>
-                        <strong>${item.name}</strong><br>
-                        <small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small>
-                    </div>
-                    <div style="display:flex; gap:5px;">
-                        <button class="edit-btn" onclick="openEditItem(${originalIndex})"><i class="fas fa-edit"></i></button>
-                        <button class="edit-btn" style="background:#e74c3c" onclick="deleteItemFromInventory(${originalIndex})"><i class="fas fa-trash"></i></button>
-                    </div>
+                    <div><strong>${item.name}</strong><br><small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small></div>
+                    <div style="display:flex; gap:5px;"><button class="edit-btn" onclick="openEditItem(${originalIndex})"><i class="fas fa-edit"></i></button><button class="edit-btn" style="background:#e74c3c" onclick="deleteItemFromInventory(${originalIndex})"><i class="fas fa-trash"></i></button></div>
                 </div>`;
         });
     }
@@ -842,13 +808,11 @@
         const title = document.getElementById('exp-title').value, amount = document.getElementById('exp-amount').value, date = document.getElementById('exp-date').value;
         if (!title || !amount || !date) return alert("ملء الحقول");
         expenses.push({ title, amount: parseFloat(amount), date });
-        localStorage.setItem('pos_expenses', JSON.stringify(expenses));
-        renderExpenses();
+        localStorage.setItem('pos_expenses', JSON.stringify(expenses)); renderExpenses();
     }
 
     function renderExpenses() {
-        const container = document.getElementById('expenses-list-container');
-        container.innerHTML = "";
+        const container = document.getElementById('expenses-list-container'); container.innerHTML = "";
         expenses.slice().reverse().forEach(exp => { container.innerHTML += `<div class="staff-item"><span>${exp.title}</span><strong>${parseFloat(exp.amount).toLocaleString()}</strong></div>`; });
     }
 
@@ -899,12 +863,9 @@
     }
 
     function renderQuickItems() {
-        const container = document.getElementById('quick-items-container');
-        container.innerHTML = "";
+        const container = document.getElementById('quick-items-container'); container.innerHTML = "";
         inventory.slice(0, 6).forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'quick-item';
-            div.innerText = item.name;
+            const div = document.createElement('div'); div.className = 'quick-item'; div.innerText = item.name;
             div.onclick = () => { document.getElementById('s-barcode').value = item.barcode || ""; document.getElementById('s-code').value = item.code || ""; document.getElementById('s-item-name').value = item.name; document.getElementById('s-price').value = item.price; };
             container.appendChild(div);
         });
@@ -914,8 +875,7 @@
         const box = document.getElementById('cam-box-' + readerId);
         if (box.style.display === 'block') { stopCamera(); box.style.display = 'none'; }
         else {
-            box.style.display = 'block';
-            html5QrCode = new Html5Qrcode(readerId);
+            box.style.display = 'block'; html5QrCode = new Html5Qrcode(readerId);
             html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (text) => {
                 document.getElementById(inputId).value = text;
                 if(inputId === 's-barcode') searchProductByBarcode(text);
@@ -928,27 +888,18 @@
     function stopCamera() { if (html5QrCode) { html5QrCode.stop().then(() => html5QrCode = null).catch(() => {}); } }
 
     function openEditItem(index) {
-        currentEditIndex = index;
-        const item = inventory[index];
-        document.getElementById('edit-item-name').innerText = item.name;
-        document.getElementById('edit-item-qty').value = item.qty;
-        document.getElementById('edit-item-price').value = item.price;
+        currentEditIndex = index; const item = inventory[index];
+        document.getElementById('edit-item-name').innerText = item.name; document.getElementById('edit-item-qty').value = item.qty; document.getElementById('edit-item-price').value = item.price;
         document.getElementById('edit-modal').style.display = 'flex';
     }
 
     function saveInventoryEdit() {
         inventory[currentEditIndex].qty = parseFloat(document.getElementById('edit-item-qty').value);
         inventory[currentEditIndex].price = parseFloat(document.getElementById('edit-item-price').value);
-        localStorage.setItem('pos_inventory', JSON.stringify(inventory));
-        renderInventory(); document.getElementById('edit-modal').style.display='none';
+        localStorage.setItem('pos_inventory', JSON.stringify(inventory)); renderInventory(); document.getElementById('edit-modal').style.display='none';
     }
 
     function deleteItemFromInventory(i) { if(confirm("حذف؟")) { inventory.splice(i,1); localStorage.setItem('pos_inventory', JSON.stringify(inventory)); renderInventory(); } }
-
-    function handleRegister() {
-        const name = document.getElementById('reg-name').value, email = document.getElementById('reg-email').value, pass = document.getElementById('reg-pass').value;
-        users.push({ name, email, pass }); localStorage.setItem('pos_users', JSON.stringify(users)); toggleAuthMode(false);
-    }
 
     function logout() { sessionStorage.removeItem('pos_logged_in_user'); location.reload(); }
     function toggleAuthMode(isReg) { document.getElementById('login-form').style.display=isReg?'none':'block'; document.getElementById('register-form').style.display=isReg?'block':'none'; }
@@ -963,18 +914,10 @@
     function closeEditModal() { document.getElementById('edit-modal').style.display = 'none'; }
     function loadStoreInfo() {
         const info = JSON.parse(localStorage.getItem('pos_store_info'));
-        if(info) {
-            document.getElementById('store-name-info').value = info.name;
-            document.getElementById('store-address-info').value = info.address;
-            document.getElementById('store-phone-info').value = info.phone;
-        }
+        if(info) { document.getElementById('store-name-info').value = info.name; document.getElementById('store-address-info').value = info.address; document.getElementById('store-phone-info').value = info.phone; }
     }
     function saveStoreInfo() {
-        localStorage.setItem('pos_store_info', JSON.stringify({
-            name: document.getElementById('store-name-info').value,
-            address: document.getElementById('store-address-info').value,
-            phone: document.getElementById('store-phone-info').value
-        }));
+        localStorage.setItem('pos_store_info', JSON.stringify({ name: document.getElementById('store-name-info').value, address: document.getElementById('store-address-info').value, phone: document.getElementById('store-phone-info').value }));
         alert("تم الحفظ");
     }
 
@@ -983,8 +926,7 @@
         let data = (type === 'sales') ? salesInvoices : purchaseInvoices;
         container.innerHTML = "";
         data.slice().reverse().forEach(inv => {
-            const div = document.createElement('div');
-            div.className = 'report-box';
+            const div = document.createElement('div'); div.className = 'report-box';
             div.innerHTML = `<strong>${inv.date}</strong><br>الجهة: ${inv.customer} | المجموع: ${inv.total.toLocaleString()}`;
             div.onclick = () => showInvoiceDetails(inv, type);
             container.appendChild(div);
@@ -994,15 +936,11 @@
     function exportBackup() {
         const backupData = { inventory, purchaseInvoices, salesInvoices, staffMembers, subscriptions, expenses, returnsLog, storeInfo: JSON.parse(localStorage.getItem('pos_store_info')) || {}, users: JSON.parse(localStorage.getItem('pos_users')) || [] };
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData));
-        const dl = document.createElement('a');
-        dl.setAttribute("href", dataStr);
-        dl.setAttribute("download", "cashier_backup.json");
-        dl.click();
+        const dl = document.createElement('a'); dl.setAttribute("href", dataStr); dl.setAttribute("download", "cashier_backup.json"); dl.click();
     }
 
     function importBackup(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+        const file = event.target.files[0]; if (!file) return;
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
