@@ -454,6 +454,14 @@
         <button class="btn-action bg-back" onclick="showSection('home-screen')">رجوع</button>
         <div class="inner-card">
             <h3 style="color:var(--g-inventory)"><i class="fas fa-boxes"></i> جرد وتعديل المخزن</h3>
+            
+            <div style="position: relative; margin-bottom: 15px;">
+                <i class="fas fa-search" style="position: absolute; right: 15px; top: 18px; color: #999;"></i>
+                <input type="text" id="inventory-search" placeholder="ابحث عن مادة (اسم، باركود، كود)..." 
+                       oninput="renderInventory(this.value)" 
+                       style="padding-right: 40px; border: 2px solid var(--g-inventory); border-radius: 15px;">
+            </div>
+
             <div id="inventory-container"></div>
         </div>
     </div> 
@@ -541,7 +549,7 @@
     let staffMembers = JSON.parse(localStorage.getItem('pos_staff')) || [];
     let subscriptions = JSON.parse(localStorage.getItem('pos_subscriptions')) || [];
     let expenses = JSON.parse(localStorage.getItem('pos_expenses')) || [];
-    let returnsLog = JSON.parse(localStorage.getItem('pos_returns')) || []; // سجل المرتجعات
+    let returnsLog = JSON.parse(localStorage.getItem('pos_returns')) || []; 
     
     let tempPurchases = [];
     let tempSales = [];
@@ -553,7 +561,6 @@
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
 
-    // دالة البحث للمرتجع بالباركود
     function searchProductForReturn(barcode) {
         if(!barcode) return;
         const item = inventory.find(i => i.barcode === barcode);
@@ -564,7 +571,6 @@
         }
     }
 
-    // دالة البحث للمرتجع بالكود (المطلوبة)
     function searchProductForReturnByCode(code) {
         if(!code) return;
         const item = inventory.find(i => i.code === code);
@@ -575,7 +581,6 @@
         }
     }
 
-    // دالة إتمام الاسترجاع
     function processItemReturn() {
         const barcode = document.getElementById('ret-barcode').value;
         const code = document.getElementById('ret-code').value;
@@ -585,14 +590,12 @@
 
         if(!name || isNaN(qty)) return alert("يرجى اختيار مادة صالحة");
 
-        // 1. إعادة الكمية للمخزن
         const stockItem = inventory.find(i => i.name === name);
         if(stockItem) {
             stockItem.qty += qty;
             localStorage.setItem('pos_inventory', JSON.stringify(inventory));
         }
 
-        // 2. تسجيل العملية في سجل المرتجعات
         const returnEntry = {
             id: Date.now(),
             name: name,
@@ -604,20 +607,18 @@
         returnsLog.push(returnEntry);
         localStorage.setItem('pos_returns', JSON.stringify(returnsLog));
 
-        // 3. خصم من إجمالي مبيعات اليوم (بإضافة فاتورة سالبة)
         const returnInvoice = {
             id: "RET-" + Date.now(),
             customer: "مرتجع بضاعة",
             date: new Date().toLocaleString('ar-EG'),
             items: [{ name: "مرتجع: " + name, qty: qty, price: price, discount: 0 }],
-            total: -(qty * price) // قيمة سالبة
+            total: -(qty * price) 
         };
         salesInvoices.push(returnInvoice);
         localStorage.setItem('pos_s_invoices', JSON.stringify(salesInvoices));
 
         alert("تم استرجاع المادة وإعادتها للمخزن بنجاح ✅");
         
-        // تفريغ الحقول وتحديث الواجهة
         document.getElementById('ret-barcode').value = "";
         document.getElementById('ret-code').value = "";
         document.getElementById('ret-item-name').value = "";
@@ -696,12 +697,39 @@
         document.getElementById('detail-modal').style.display = 'flex';
     }
 
-    function renderInventory() {
+    // وظيفة المخزن مع البحث الذكي
+    function renderInventory(searchTerm = "") {
         const container = document.getElementById('inventory-container');
         container.innerHTML = "";
-        if(inventory.length === 0) { container.innerHTML = "<p style='text-align:center; color:#999;'>المخزن فارغ.</p>"; return; }
-        inventory.forEach((item, index) => {
-            container.innerHTML += `<div class="inventory-item"><div><strong>${item.name}</strong><br><small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small><br><small style="color:blue">كود: ${item.code || '---'}</small></div><div style="display:flex; gap:5px;"><button class="edit-btn" onclick="openEditItem(${index})"><i class="fas fa-edit"></i></button><button class="edit-btn" style="background:#e74c3c" onclick="deleteItemFromInventory(${index})"><i class="fas fa-trash"></i></button></div></div>`;
+        
+        const filteredInventory = inventory.filter(item => {
+            const term = searchTerm.toLowerCase();
+            return (
+                (item.name && item.name.toLowerCase().includes(term)) ||
+                (item.barcode && item.barcode.includes(term)) ||
+                (item.code && item.code.includes(term))
+            );
+        });
+
+        if(filteredInventory.length === 0) { 
+            container.innerHTML = "<p style='text-align:center; color:#999;'>لا توجد مواد مطابقة للبحث.</p>"; 
+            return; 
+        }
+
+        filteredInventory.forEach((item) => {
+            const originalIndex = inventory.indexOf(item);
+            container.innerHTML += `
+                <div class="inventory-item">
+                    <div>
+                        <strong>${item.name}</strong><br>
+                        <small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small><br>
+                        <small style="color:blue">كود: ${item.code || '---'}</small>
+                    </div>
+                    <div style="display:flex; gap:5px;">
+                        <button class="edit-btn" onclick="openEditItem(${originalIndex})"><i class="fas fa-edit"></i></button>
+                        <button class="edit-btn" style="background:#e74c3c" onclick="deleteItemFromInventory(${originalIndex})"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>`;
         });
     }
 
@@ -774,7 +802,10 @@
     function showSection(id) { 
         stopCamera(); document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); 
         document.getElementById(id).classList.add('active'); 
-        if(id === 'inventory-screen') renderInventory(); 
+        if(id === 'inventory-screen') { 
+            document.getElementById('inventory-search').value = ""; 
+            renderInventory(); 
+        }
         if(id === 'sales-screen') { renderQuickItems(); renderCartTable(); }
         if(id === 'accounts-screen') updateAccountsStats();
         if(id === 'expenses-screen') renderExpenses();
