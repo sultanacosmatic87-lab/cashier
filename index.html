@@ -166,7 +166,7 @@
     </div>
     <div class="sidebar-menu">
         <a href="#" onclick="showSection('home-screen'); toggleSidebar();"><i class="fas fa-home"></i> الرئيسية</a>
-        <a href="#" onclick="showSection('expenses-screen'); toggleSidebar();"><i class="fas fa-money-bill-wave"></i> المصاريف</a>
+        <a href="#" id="side-expenses-link" onclick="showSection('expenses-screen'); toggleSidebar();"><i class="fas fa-money-bill-wave"></i> المصاريف</a>
         <a href="#" id="side-staff-link" onclick="showSection('staff-management-screen'); toggleSidebar();"><i class="fas fa-users-cog"></i> الموظفين</a>
         <a href="#" id="side-store-link" onclick="showSection('store-screen'); toggleSidebar();"><i class="fas fa-cog"></i> الإعدادات</a>
         <a href="#" onclick="logout();" style="color: #e74c3c;"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</a>
@@ -196,7 +196,7 @@
             </div>
             
             <div id="login-form">
-                <input type="email" id="login-email" placeholder="البريد الإلكتروني">
+                <input type="text" id="login-email" placeholder="الاسم أو البريد الإلكتروني">
                 <input type="password" id="login-pass" placeholder="كلمة المرور">
                 <button class="btn-action bg-save" style="background:#2c3e50; width: 100%;" onclick="handleLogin()">دخول</button>
                 <p style="text-align: center; margin-top: 15px;">ليس لديك حساب؟ <a href="#" onclick="toggleAuthMode(true)" style="color:#3498db; text-decoration: none;">إنشاء حساب جديد</a></p>
@@ -232,7 +232,7 @@
             <div class="card c-accounts" id="card-accounts" onclick="showSection('accounts-screen')"><i class="fas fa-calculator card-icon"></i><h3 class="card-title">الحسابات</h3><p class="card-sub">مطابقة القاصة والأرباح</p></div>
             <div class="card c-subs" id="card-subscriptions" onclick="showSection('subscriptions-screen')"><i class="fas fa-id-card card-icon"></i><h3 class="card-title">الاشتراكات</h3><p class="card-sub">إدارة باقات الزبائن</p></div>
             <div class="card c-store" id="card-store" onclick="showSection('store-screen')"><i class="fas fa-store card-icon"></i><h3 class="card-title">المتجر</h3><p class="card-sub">المنصة والربط الإداري</p></div>
-            <div class="card" style="background:#e74c3c" onclick="showSection('expenses-screen')"><i class="fas fa-money-bill-wave card-icon"></i><h3 class="card-title">المصاريف</h3><p class="card-sub">رواتب، إيجار، نثريات</p></div>
+            <div class="card" id="card-expenses" style="background:#e74c3c" onclick="showSection('expenses-screen')"><i class="fas fa-money-bill-wave card-icon"></i><h3 class="card-title">المصاريف</h3><p class="card-sub">رواتب، إيجار، نثريات</p></div>
         </div>
     </div> 
 
@@ -561,6 +561,92 @@
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
 
+    // --- نظام الموظفين والصلاحيات ---
+    function handleLogin() {
+        const userInput = document.getElementById('login-email').value;
+        const passInput = document.getElementById('login-pass').value;
+
+        // التحقق من حساب المدير الرئيسي
+        let user = users.find(u => (u.email === userInput || u.name === userInput) && u.pass === passInput);
+        if (user) {
+            user.role = "كامل الصلاحيات";
+            sessionStorage.setItem('pos_logged_in_user', JSON.stringify(user));
+            location.reload();
+            return;
+        }
+
+        // التحقق من حسابات الموظفين
+        let staff = staffMembers.find(s => s.user === userInput && s.pass === passInput);
+        if (staff) {
+            sessionStorage.setItem('pos_logged_in_user', JSON.stringify(staff));
+            location.reload();
+        } else {
+            alert("خطأ في البيانات، يرجى التأكد من الاسم وكلمة المرور");
+        }
+    }
+
+    function applyPermissions(role) {
+        if (role === "مبيعات فقط") {
+            document.getElementById('card-purchases').style.display = 'none';
+            document.getElementById('card-reports').style.display = 'none';
+            document.getElementById('card-accounts').style.display = 'none';
+            document.getElementById('card-store').style.display = 'none';
+            document.getElementById('card-inventory').style.display = 'none';
+            document.getElementById('card-subscriptions').style.display = 'none';
+            document.getElementById('card-expenses').style.display = 'none';
+            document.getElementById('side-staff-link').style.display = 'none';
+            document.getElementById('side-store-link').style.display = 'none';
+            document.getElementById('side-expenses-link').style.display = 'none';
+        } else if (role === "مخزن فقط") {
+            document.getElementById('card-sales').style.display = 'none';
+            document.getElementById('card-reports').style.display = 'none';
+            document.getElementById('card-accounts').style.display = 'none';
+            document.getElementById('card-store').style.display = 'none';
+            document.getElementById('card-subscriptions').style.display = 'none';
+            document.getElementById('side-staff-link').style.display = 'none';
+            document.getElementById('side-store-link').style.display = 'none';
+        }
+    }
+
+    function addNewStaff() {
+        const name = document.getElementById('staff-name').value;
+        const user = document.getElementById('staff-user').value;
+        const pass = document.getElementById('staff-pass').value;
+        const role = document.getElementById('staff-role').value;
+        if (!name || !user || !pass) return alert("أكمل كافة البيانات");
+        staffMembers.push({ name, user, pass, role });
+        localStorage.setItem('pos_staff', JSON.stringify(staffMembers));
+        document.getElementById('staff-name').value = "";
+        document.getElementById('staff-user').value = "";
+        document.getElementById('staff-pass').value = "";
+        renderStaff();
+        alert("تمت إضافة الموظف بنجاح");
+    }
+
+    function renderStaff() {
+        const container = document.getElementById('staff-list-container');
+        if(!container) return;
+        container.innerHTML = "";
+        staffMembers.forEach((staff, index) => {
+            container.innerHTML += `<div class="staff-item"><div><strong>${staff.name}</strong><br><small>${staff.role}</small></div><button class="edit-btn" style="background:#e74c3c" onclick="deleteStaff(${index})">حذف</button></div>`;
+        });
+    }
+
+    function deleteStaff(index) { if(confirm("حذف الموظف؟")) { staffMembers.splice(index, 1); localStorage.setItem('pos_staff', JSON.stringify(staffMembers)); renderStaff(); } }
+
+    function initializeDashboard() {
+        if (currentUser) { 
+            document.getElementById('auth-screen').classList.remove('active');
+            document.getElementById('main-header').style.display = 'flex'; 
+            showSection('home-screen'); 
+            document.getElementById('sidebar-store-name').innerText = currentUser.name;
+            document.getElementById('sidebar-user-login').innerHTML = `<i class="fas fa-user-circle"></i> ${currentUser.role || 'المدير العام'}`;
+            applyPermissions(currentUser.role);
+            updateQuickStats();
+        }
+    }
+
+    // --- الوظائف الأساسية ---
     function searchProductForReturn(barcode) {
         if(!barcode) return;
         const item = inventory.find(i => i.barcode === barcode);
@@ -697,33 +783,21 @@
         document.getElementById('detail-modal').style.display = 'flex';
     }
 
-    // وظيفة المخزن مع البحث الذكي
     function renderInventory(searchTerm = "") {
         const container = document.getElementById('inventory-container');
         container.innerHTML = "";
-        
         const filteredInventory = inventory.filter(item => {
             const term = searchTerm.toLowerCase();
-            return (
-                (item.name && item.name.toLowerCase().includes(term)) ||
-                (item.barcode && item.barcode.includes(term)) ||
-                (item.code && item.code.includes(term))
-            );
+            return ( (item.name && item.name.toLowerCase().includes(term)) || (item.barcode && item.barcode.includes(term)) || (item.code && item.code.includes(term)) );
         });
-
-        if(filteredInventory.length === 0) { 
-            container.innerHTML = "<p style='text-align:center; color:#999;'>لا توجد مواد مطابقة للبحث.</p>"; 
-            return; 
-        }
-
+        if(filteredInventory.length === 0) { container.innerHTML = "<p style='text-align:center; color:#999;'>لا توجد مواد مطابقة.</p>"; return; }
         filteredInventory.forEach((item) => {
             const originalIndex = inventory.indexOf(item);
             container.innerHTML += `
                 <div class="inventory-item">
                     <div>
                         <strong>${item.name}</strong><br>
-                        <small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small><br>
-                        <small style="color:blue">كود: ${item.code || '---'}</small>
+                        <small>الكمية: ${item.qty} | السعر: ${item.price.toLocaleString()} د.ع</small>
                     </div>
                     <div style="display:flex; gap:5px;">
                         <button class="edit-btn" onclick="openEditItem(${originalIndex})"><i class="fas fa-edit"></i></button>
@@ -737,7 +811,6 @@
         const todayStr = new Date().toLocaleDateString('ar-EG');
         const todaySalesInvoices = salesInvoices.filter(inv => inv.date.includes(todayStr));
         const totalSales = todaySalesInvoices.reduce((sum, inv) => sum + inv.total, 0);
-
         let totalProfit = 0;
         todaySalesInvoices.forEach(inv => {
             inv.items.forEach(soldItem => {
@@ -748,14 +821,10 @@
                 if(inv.total < 0) totalProfit -= Math.abs(profit); else totalProfit += profit;
             });
         });
-
-        const totalExpenses = expenses.filter(exp => new Date(exp.date).toLocaleDateString('ar-EG') === todayStr)
-                                     .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
-
+        const totalExpenses = expenses.filter(exp => new Date(exp.date).toLocaleDateString('ar-EG') === todayStr).reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
         document.getElementById('day-sales-total').innerText = totalSales.toLocaleString() + " د.ع";
         document.getElementById('day-profit-total').innerText = totalProfit.toLocaleString() + " د.ع";
         document.getElementById('day-expenses-total').innerText = totalExpenses.toLocaleString() + " د.ع";
-
         renderDailyChart(totalSales, totalProfit, totalExpenses);
     }
 
@@ -764,24 +833,8 @@
         if (myChart) { myChart.destroy(); }
         myChart = new Chart(ctx, {
             type: 'bar',
-            data: {
-                labels: ['المبيعات', 'الأرباح', 'المصاريف'],
-                datasets: [{
-                    label: 'إحصاءات اليوم',
-                    data: [sales, profit, expenses],
-                    backgroundColor: ['#f39c12', '#27ae60', '#e74c3c'],
-                    borderRadius: 10
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    y: { beginAtZero: true, grid: { display: false }, ticks: { font: { family: 'Cairo' } } },
-                    x: { grid: { display: false }, ticks: { font: { family: 'Cairo' } } }
-                }
-            }
+            data: { labels: ['المبيعات', 'الأرباح', 'المصاريف'], datasets: [{ label: 'إحصاءات اليوم', data: [sales, profit, expenses], backgroundColor: ['#f39c12', '#27ae60', '#e74c3c'], borderRadius: 10 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { display: false } }, x: { grid: { display: false } } } }
         });
     }
 
@@ -802,10 +855,7 @@
     function showSection(id) { 
         stopCamera(); document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); 
         document.getElementById(id).classList.add('active'); 
-        if(id === 'inventory-screen') { 
-            document.getElementById('inventory-search').value = ""; 
-            renderInventory(); 
-        }
+        if(id === 'inventory-screen') { document.getElementById('inventory-search').value = ""; renderInventory(); }
         if(id === 'sales-screen') { renderQuickItems(); renderCartTable(); }
         if(id === 'accounts-screen') updateAccountsStats();
         if(id === 'expenses-screen') renderExpenses();
@@ -895,12 +945,6 @@
 
     function deleteItemFromInventory(i) { if(confirm("حذف؟")) { inventory.splice(i,1); localStorage.setItem('pos_inventory', JSON.stringify(inventory)); renderInventory(); } }
 
-    function handleLogin() {
-        const email = document.getElementById('login-email').value, pass = document.getElementById('login-pass').value;
-        const user = users.find(u => u.email === email && u.pass === pass);
-        if (user) { sessionStorage.setItem('pos_logged_in_user', JSON.stringify(user)); location.reload(); } else alert("خطأ");
-    }
-
     function handleRegister() {
         const name = document.getElementById('reg-name').value, email = document.getElementById('reg-email').value, pass = document.getElementById('reg-pass').value;
         users.push({ name, email, pass }); localStorage.setItem('pos_users', JSON.stringify(users)); toggleAuthMode(false);
@@ -909,14 +953,7 @@
     function logout() { sessionStorage.removeItem('pos_logged_in_user'); location.reload(); }
     function toggleAuthMode(isReg) { document.getElementById('login-form').style.display=isReg?'none':'block'; document.getElementById('register-form').style.display=isReg?'block':'none'; }
     function toggleSidebar() { document.getElementById('sidebar').classList.toggle('active'); const o = document.getElementById('overlay'); o.style.display = o.style.display==='block'?'none':'block'; }
-    function initializeDashboard() {
-        if (currentUser) { 
-            document.getElementById('main-header').style.display = 'flex'; 
-            showSection('home-screen'); 
-            document.getElementById('sidebar-store-name').innerText = currentUser.name;
-            updateQuickStats();
-        }
-    }
+    
     function updateQuickStats() {
         const todayAr = new Date().toLocaleDateString('ar-EG');
         const sales = salesInvoices.filter(inv => inv.date.includes(todayAr)).reduce((s, i) => s + i.total, 0);
@@ -954,36 +991,12 @@
         });
     }
 
-    function renderStaff() {
-        const container = document.getElementById('staff-list-container');
-        if(!container) return;
-        container.innerHTML = "";
-        staffMembers.forEach((staff, index) => {
-            container.innerHTML += `<div class="staff-item"><div><strong>${staff.name}</strong><br><small>${staff.role}</small></div><button class="edit-btn" style="background:#e74c3c" onclick="deleteStaff(${index})">حذف</button></div>`;
-        });
-    }
-
-    function addNewStaff() {
-        const name = document.getElementById('staff-name').value, user = document.getElementById('staff-user').value, pass = document.getElementById('staff-pass').value, role = document.getElementById('staff-role').value;
-        if (!name || !user || !pass) return alert("أكمل البيانات");
-        staffMembers.push({ name, user, pass, role });
-        localStorage.setItem('pos_staff', JSON.stringify(staffMembers));
-        renderStaff();
-    }
-
-    function deleteStaff(index) { staffMembers.splice(index, 1); localStorage.setItem('pos_staff', JSON.stringify(staffMembers)); renderStaff(); }
-
     function exportBackup() {
-        const backupData = {
-            inventory, purchaseInvoices, salesInvoices, staffMembers, subscriptions, expenses, returnsLog,
-            storeInfo: JSON.parse(localStorage.getItem('pos_store_info')) || {},
-            users: JSON.parse(localStorage.getItem('pos_users')) || []
-        };
+        const backupData = { inventory, purchaseInvoices, salesInvoices, staffMembers, subscriptions, expenses, returnsLog, storeInfo: JSON.parse(localStorage.getItem('pos_store_info')) || {}, users: JSON.parse(localStorage.getItem('pos_users')) || [] };
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData));
         const dl = document.createElement('a');
-        const date = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
         dl.setAttribute("href", dataStr);
-        dl.setAttribute("download", "cashier_backup_" + date + ".json");
+        dl.setAttribute("download", "cashier_backup.json");
         dl.click();
     }
 
@@ -994,16 +1007,14 @@
         reader.onload = function(e) {
             try {
                 const data = JSON.parse(e.target.result);
-                if (confirm("سيتم استبدال البيانات الحالية بالكامل، هل أنت متأكد؟")) {
+                if (confirm("سيتم استبدال البيانات الحالية؟")) {
                     if(data.inventory) localStorage.setItem('pos_inventory', JSON.stringify(data.inventory));
                     if(data.purchaseInvoices) localStorage.setItem('pos_p_invoices', JSON.stringify(data.purchaseInvoices));
                     if(data.salesInvoices) localStorage.setItem('pos_s_invoices', JSON.stringify(data.salesInvoices));
                     if(data.staffMembers) localStorage.setItem('pos_staff', JSON.stringify(data.staffMembers));
                     if(data.expenses) localStorage.setItem('pos_expenses', JSON.stringify(data.expenses));
-                    if(data.returnsLog) localStorage.setItem('pos_returns', JSON.stringify(data.returnsLog));
                     if(data.storeInfo) localStorage.setItem('pos_store_info', JSON.stringify(data.storeInfo));
                     if(data.users) localStorage.setItem('pos_users', JSON.stringify(data.users));
-                    alert("تمت استعادة البيانات بنجاح");
                     location.reload();
                 }
             } catch (err) { alert("ملف غير صالح"); }
