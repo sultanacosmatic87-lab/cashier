@@ -122,8 +122,8 @@
         .edit-btn { background: #3498db; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; } 
 
         .quick-items-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
-        .quick-item { background: #fff; border: 1px solid var(--main-pink); padding: 10px; border-radius: 10px; text-align: center; font-size: 0.8rem; cursor: pointer; transition: 0.2s; }
-        .quick-item:active { background: var(--main-pink); color: white; }
+        .quick-item { background: #fff; border: 1px solid #ff85a2; padding: 10px; border-radius: 10px; text-align: center; font-size: 0.8rem; cursor: pointer; transition: 0.2s; }
+        .quick-item:active { background: #ff85a2; color: white; }
         .currency-switch { display: flex; align-items: center; gap: 10px; background: #fff3f6; padding: 10px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #ffcad7; } 
 
         .cart-table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 0.85rem; border-radius: 10px; overflow: hidden; }
@@ -284,11 +284,11 @@
         <button class="btn-action bg-back" onclick="showSection('home-screen')">رجوع</button>
         <div class="inner-card" style="border-top: 5px solid #9b59b6;">
             <h3 style="color:#8e44ad"><i class="fas fa-robot"></i> مساعد الذكاء الاصطناعي</h3>
-            <p style="font-size:0.8rem; color:#666;">اسأل المساعد عن أداء المتجر أو كيفية تحسين المبيعات.</p>
-            <div id="ai-chat-box" style="height: 200px; background: #f9f9f9; border-radius: 10px; padding: 10px; overflow-y: auto; margin-bottom: 10px; font-size: 0.9rem;">
-                <p style="color:#8e44ad;"><b>المساعد:</b> أهلاً بك في كاشير برو، كيف يمكنني مساعدتك اليوم؟</p>
+            <p style="font-size:0.8rem; color:#666;">اسأل المساعد عن أداء المتجر أو "تحليل المواد" لرؤية المواد الأكثر مبيعاً.</p>
+            <div id="ai-chat-box" style="height: 350px; background: #f9f9f9; border-radius: 10px; padding: 15px; overflow-y: auto; margin-bottom: 10px; font-size: 0.9rem; border: 1px solid #eee;">
+                <p style="color:#8e44ad;"><b>المساعد:</b> أهلاً بك في كاشير برو، كيف يمكنني مساعدتك اليوم؟ جرب أن تطلب مني "تحليل المواد" لمشاهدة إحصائياتك.</p>
             </div>
-            <input type="text" id="ai-input" placeholder="اكتب سؤالك هنا...">
+            <input type="text" id="ai-input" placeholder="اكتب سؤالك هنا (مثلاً: تحليل مبيعات المواد)...">
             <button class="btn-action" style="background:#8e44ad;" onclick="askAI()">إرسال</button>
         </div>
     </div>
@@ -782,7 +782,6 @@
 
         if (!name || isNaN(qty) || isNaN(cost) || isNaN(price)) return alert("يرجى ملء بيانات المادة كاملة");
 
-        // --- التنبيه عند تكرار الباركود المسجل مسبقاً ---
         if (barcode !== "") {
             const existsInInventory = inventory.find(i => i.barcode === barcode);
             if (existsInInventory) {
@@ -962,26 +961,126 @@
         const input = document.getElementById('ai-input');
         const chatBox = document.getElementById('ai-chat-box');
         if (!input.value) return;
-        chatBox.innerHTML += `<p><b>أنت:</b> ${input.value}</p>`;
         
-        let response = "عذراً، أحتاج لمزيد من البيانات لتحليل طلبك.";
-        const query = input.value.toLowerCase();
+        const query = input.value.toLowerCase().trim();
+        chatBox.innerHTML += `<div style="margin-bottom:10px; text-align:left; background:#eee; padding:8px; border-radius:8px;"><b>أنت:</b> ${input.value}</div>`;
         
-        if (query.includes("مبيعات")) {
-            const today = new Date().toLocaleDateString('ar-EG');
-            const salesTotal = salesInvoices.filter(inv => inv.date.includes(today)).reduce((s, i) => s + i.total, 0);
-            response = `مبيعات اليوم حتى الآن هي ${salesTotal.toLocaleString()} د.ع. هل تريد نصائح لزيادتها؟`;
-        } else if (query.includes("نواقص") || query.includes("خلص")) {
-            const count = inventory.filter(i => i.qty <= 2).length;
-            response = `يوجد حالياً ${count} مواد أوشكت على النفاد (2 قطعة أو أقل). يمكنك فحصها من قسم النواقص.`;
-        } else {
-            response = "أنا هنا لمساعدتك في إدارة " + (JSON.parse(localStorage.getItem('pos_store_info'))?.name || 'متجرك') + ". اسألني عن المبيعات أو المخزن.";
+        let response = "";
+        const today = new Date().toLocaleDateString('ar-EG');
+
+        // 1. تحليل عام للمبيعات ورسم بياني لأفضل المواد مبيعاً
+        if (query.includes("تحليل") || query.includes("الاكثر مبيعا") || query.includes("بيع") || query.includes("تقرير")) {
+            let productSales = {};
+            salesInvoices.forEach(inv => {
+                inv.items.forEach(item => {
+                    const itemName = item.name.replace("مرتجع: ", "");
+                    if (!productSales[itemName]) productSales[itemName] = 0;
+                    productSales[itemName] += (inv.total < 0) ? -item.qty : item.qty;
+                });
+            });
+
+            let sortedProducts = Object.entries(productSales).sort((a, b) => b[1] - a[1]);
+            
+            if (sortedProducts.length === 0) {
+                response = "حياك الله عيوني، لا توجد أي مبيعات مسجلة بالنظام حالياً حتى أقدر أحللها الك.";
+            } else {
+                const bestSeller = sortedProducts[0];
+                const leastSeller = sortedProducts[sortedProducts.length - 1];
+                const top5 = sortedProducts.slice(0, 5);
+                const labels = top5.map(p => p[0]);
+                const dataValues = top5.map(p => p[1]);
+
+                response = `
+                    <div style="background:#fff; padding:12px; border-radius:12px; border:1px solid #9b59b6; margin-top:10px; box-shadow:0 2px 5px rgba(0,0,0,0.05)">
+                        <p style="color:#8e44ad; font-weight:bold; margin-bottom:10px;"><i class="fas fa-chart-pie"></i> التحليل الذكي لحركة المواد:</p>
+                        <p style="font-size:0.85rem;">🔥 <b>المادة الأكثر مبيعاً:</b> ${bestSeller[0]} (${bestSeller[1]} قطعة تم بيعها).</p>
+                        <p style="font-size:0.85rem; border-bottom:1px solid #eee; padding-bottom:10px;">❄️ <b>المادة الأقل حركة:</b> ${leastSeller[0]} (${leastSeller[1]} قطعة فقط).</p>
+                        <canvas id="aiChart-${Date.now()}" class="ai-rendered-chart" style="width:100%; height:180px; margin-top:10px;"></canvas>
+                    </div>
+                `;
+
+                chatBox.innerHTML += `<div style="color:#8e44ad; margin-bottom:15px;"><b>المساعد:</b> ${response}</div>`;
+                
+                setTimeout(() => {
+                    const canvas = chatBox.querySelector('.ai-rendered-chart:last-of-type');
+                    const ctx = canvas.getContext('2d');
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                data: dataValues,
+                                backgroundColor: ['#ff85a2', '#3498db', '#27ae60', '#f39c12', '#9b59b6'],
+                                borderWidth: 1
+                            }]
+                        },
+                        options: { 
+                            responsive: true,
+                            plugins: { 
+                                legend: { position: 'bottom', labels: { font: { family: 'Cairo', size: 9 } } } 
+                            }
+                        }
+                    });
+                }, 200);
+                
+                chatBox.scrollTop = chatBox.scrollHeight;
+                input.value = "";
+                return;
+            }
+        } 
+        // 2. معالجة الاستعلامات عن الأرباح
+        else if (query.includes("ربح") || query.includes("ارباح") || query.includes("فلوس") || query.includes("طلعنا")) {
+            let totalProfit = 0;
+            const todaySales = salesInvoices.filter(inv => inv.date.includes(today));
+            
+            todaySales.forEach(inv => {
+                inv.items.forEach(soldItem => {
+                    const stockItem = inventory.find(i => i.name === soldItem.name.replace("مرتجع: ", ""));
+                    const cost = stockItem ? stockItem.cost : 0;
+                    const profit = (soldItem.price - cost) * soldItem.qty - (soldItem.discount || 0);
+                    totalProfit += (inv.total < 0) ? -Math.abs(profit) : profit;
+                });
+            });
+            response = `صافي أرباح المحل التقديرية اليوم هي <b>${totalProfit.toLocaleString()} د.ع</b> (هذا الصافي الصافي بعد طرح كلفة المواد والخصومات الصادرة للزبائن).`;
+        } 
+        // 3. فحص كمية أو سعر مادة معينة (جرد فوري بالذكاء)
+        else if (query.includes("كم") || query.includes("موجود") || query.includes("سعر") || query.includes("جرد")) {
+            let foundItem = null;
+            for (let item of inventory) {
+                if (query.includes(item.name.toLowerCase())) {
+                    foundItem = item;
+                    break;
+                }
+            }
+            if (foundItem) {
+                response = `أهلاً بك، مادة <b>${foundItem.name}</b> جردها الحالي بالصندوق هو <b>${foundItem.qty} قطعة</b>، وسعر بيعها المفرد للزبون هو <b>${foundItem.price.toLocaleString()} د.ع</b>.`;
+            } else {
+                response = "بحثت بسجلات المخزن وما لقيت مادة بهذا الاسم بالضبط، تأكد من كتابة اسم المادة بشكل صحيح عيوني.";
+            }
+        } 
+        // 4. معالجة النواقص والمواد المنتهية
+        else if (query.includes("نواقص") || query.includes("خلص") || query.includes("منتهي")) {
+            const lowStock = inventory.filter(i => i.qty <= 2);
+            if (lowStock.length > 0) {
+                let itemsList = lowStock.slice(0, 3).map(i => i.name).join(' و ');
+                response = `النظام يسجل حالياً <b>${lowStock.length}</b> مواد واصلة لحد النفاد. من ضمنها (<b>${itemsList}</b>)، يفضل تسوي قائمة مشتريات وتطلب توريد فوري.`;
+            } else {
+                response = "الحمد لله، مخزنك مستقر بالكامل وكل المواد متوفرة فوق حد الخطر الفوري.";
+            }
+        } 
+        // 5. معالجة المصاريف والنثريات
+        else if (query.includes("مصاريف") || query.includes("صرفنا") || query.includes("خسارة")) {
+            const totalExp = expenses.filter(exp => new Date(exp.date).toLocaleDateString('ar-EG') === today)
+                                    .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+            response = `مجموع المصاريف والنثريات المسجلة اليوم بلغت <b>${totalExp.toLocaleString()} د.ع</b>. تگدر تراجع تفاصيلها من واجهة المصاريف الكلية.`;
+        } 
+        // الرد الافتراضي المرن
+        else {
+            response = "أهلاً بك عيوني، أنا المساعد الذكي الخاص بالنظام. تگدر تسألني أي سؤال حقيقي ومباشر مثل: 'كم ربحنا اليوم؟'، 'شنو جرد سيروم فيتامين c؟'، 'شنو النواقص بالمحل؟' أو تطلب 'تحليل المبيعات' وراح أجاوبك فوراً بناءً على بيانات الكاشير الحالية.";
         }
 
-        setTimeout(() => {
-            chatBox.innerHTML += `<p style="color:#8e44ad;"><b>المساعد:</b> ${response}</p>`;
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }, 500);
+        chatBox.innerHTML += `<div style="color:#8e44ad; margin-bottom:15px; background: #f0ebff; padding: 10px; border-radius: 12px;"><b>المساعد:</b> ${response}</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
         input.value = "";
     }
 
