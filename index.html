@@ -474,6 +474,18 @@
                 <input type="number" id="s-discount-val" placeholder="0" value="0" style="margin:0; border:none; background:transparent; color:#e74c3c; font-weight:bold;">
             </div>
 
+            <!-- إضافة حقول الديون والأقساط هنا بتصميم مدمج ومتناسق -->
+            <div style="display:flex; gap:10px; margin-bottom: 8px;">
+                <div style="flex:1; display:flex; align-items: center; background: #f0f7ff; padding: 10px; border-radius: 12px; border: 1px solid #b3d7ff;">
+                    <small style="white-space: nowrap; font-weight: bold; color: #0056b3;">مبلغ الدين:</small>
+                    <input type="number" id="s-debt-val" placeholder="0" value="0" style="margin:0; border:none; background:transparent; font-weight:bold; color:#0056b3; padding:2px 8px;">
+                </div>
+                <div style="flex:1; display:flex; align-items: center; background: #f9f0ff; padding: 10px; border-radius: 12px; border: 1px solid #ebccff;">
+                    <small style="white-space: nowrap; font-weight: bold; color: #6c25b3;">مبلغ القسط:</small>
+                    <input type="number" id="s-installment-val" placeholder="0" value="0" style="margin:0; border:none; background:transparent; font-weight:bold; color:#6c25b3; padding:2px 8px;">
+                </div>
+            </div>
+
             <button class="btn-action bg-add" style="background:#e67e22" onclick="addItemToSale()"><i class="fas fa-plus"></i> إضافة للسلة</button>
             
             <div id="current-cart-display" style="margin-top: 15px; display: none;">
@@ -604,7 +616,7 @@
     </div>
 </div> 
 
-<footer><p>© 2026 كاشير برو - النسخة v1.8</p></footer> 
+<footer><p>© 2026 كاشير برو - النسخة v1.8 السحابية</p></footer> 
 
 <script>
     let inventory = JSON.parse(localStorage.getItem('pos_inventory')) || [];
@@ -701,39 +713,60 @@
             return;
         }
 
-        const term = val.toLowerCase();
-        const matches = inventory.filter(item => 
+        const term = val.toLowerCase().trim();
+        
+        let matches = inventory.filter(item => 
             item.name.toLowerCase().includes(term) || 
-            (item.code && item.code.includes(term)) ||
+            (item.code && item.code.toLowerCase().includes(term)) ||
             (item.barcode && item.barcode.includes(term))
         );
 
         if (matches.length > 0) {
-            resultsContainer.innerHTML = '';
-            matches.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'search-item';
-                div.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <strong>${item.name}</strong>
-                        <span style="font-size:0.8rem; color:#27ae60;">${item.price.toLocaleString()} د.ع</span>
-                    </div>
-                    <small style="color:#888;">المتوفر: ${item.qty} | الكود: ${item.code || '---'}</small>
-                `;
-                div.onclick = () => {
-                    document.getElementById('s-item-name').value = item.name;
-                    document.getElementById('s-price').value = item.price;
-                    document.getElementById('s-barcode').value = item.barcode || '';
-                    document.getElementById('s-code').value = item.code || '';
-                    document.getElementById('s-qty').focus();
-                    resultsContainer.style.display = 'none';
-                };
-                resultsContainer.appendChild(div);
-            });
-            resultsContainer.style.display = 'block';
-        } else {
-            resultsContainer.style.display = 'none';
+            displaySearchResults(matches, resultsContainer);
         }
+
+        if (typeof db !== 'undefined') {
+            db.ref('pos_inventory').orderByChild('name').startAt(val).endAt(val + "\uf8ff").limitToFirst(5)
+            .once('value', (snapshot) => {
+                let cloudMatches = [];
+                snapshot.forEach((childSnapshot) => {
+                    let item = childSnapshot.val();
+                    if (!matches.some(m => m.name === item.name)) {
+                        cloudMatches.push(item);
+                    }
+                });
+
+                if (cloudMatches.length > 0) {
+                    matches = matches.concat(cloudMatches);
+                    displaySearchResults(matches, resultsContainer);
+                }
+            }).catch(err => console.log("Firebase Search Error: ", err));
+        }
+    }
+
+    function displaySearchResults(matches, resultsContainer) {
+        resultsContainer.innerHTML = '';
+        matches.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'search-item';
+            div.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>${item.name}</strong>
+                    <span style="font-size:0.8rem; color:#27ae60;">${item.price.toLocaleString()} د.ع</span>
+                </div>
+                <small style="color:#888;">المتوفر: ${item.qty} | الكود: ${item.code || '---'}</small>
+            `;
+            div.onclick = () => {
+                document.getElementById('s-item-name').value = item.name;
+                document.getElementById('s-price').value = item.price;
+                document.getElementById('s-barcode').value = item.barcode || '';
+                document.getElementById('s-code').value = item.code || '';
+                document.getElementById('s-qty').focus();
+                resultsContainer.style.display = 'none';
+            };
+            resultsContainer.appendChild(div);
+        });
+        resultsContainer.style.display = 'block';
     }
 
     document.addEventListener('click', function(e) {
@@ -757,10 +790,14 @@
         const barcode = document.getElementById('ret-barcode').value, code = document.getElementById('ret-code').value, qty = parseFloat(document.getElementById('ret-qty').value), name = document.getElementById('ret-item-name').value, price = parseFloat(document.getElementById('ret-price').value);
         if(!name || isNaN(qty)) return alert("يرجى اختيار مادة صالحة");
         const stockItem = inventory.find(i => i.name === name);
-        if(stockItem) { stockItem.qty += qty; localStorage.setItem('pos_inventory', JSON.stringify(inventory)); }
+        if(stockItem) { 
+            stockItem.qty += qty; 
+            localStorage.setItem('pos_inventory', JSON.stringify(inventory)); 
+            if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
+        }
         returnsLog.push({ id: Date.now(), name, qty, price, total: qty * price, date: new Date().toLocaleString('ar-EG') });
         localStorage.setItem('pos_returns', JSON.stringify(returnsLog));
-        salesInvoices.push({ id: "RET-" + Date.now(), customer: "مرتجع بضاعة", date: new Date().toLocaleString('ar-EG'), items: [{ name: "مرتجع: " + name, qty, price, discount: 0 }], total: -(qty * price) });
+        salesInvoices.push({ id: "RET-" + Date.now(), customer: "مرتجع بضاعة", date: new Date().toLocaleString('ar-EG'), items: [{ name: "مرتجع: " + name, qty, price, discount: 0 }], total: -(qty * price), debt: 0, installment: 0 });
         localStorage.setItem('pos_s_invoices', JSON.stringify(salesInvoices));
         alert("تم استرجاع المادة ✅");
         document.getElementById('ret-barcode').value = ""; document.getElementById('ret-code').value = ""; document.getElementById('ret-item-name').value = ""; document.getElementById('ret-qty').value = "1"; document.getElementById('ret-price').value = "";
@@ -832,6 +869,7 @@
             else { inventory.push({ barcode: newItem.barcode, code: newItem.code, name: newItem.name, qty: newItem.qty, cost: newItem.cost, price: newItem.price }); }
         });
         localStorage.setItem('pos_inventory', JSON.stringify(inventory));
+        if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
         alert("تم حفظ الفاتورة"); tempPurchases = []; document.getElementById('purchase-total-text').innerText = "المبلغ الكلي: 0 د.ع"; showSection('home-screen'); updateQuickStats();
     }
 
@@ -848,7 +886,19 @@
         document.getElementById('modal-info').innerHTML = `التاريخ: ${inv.date}<br>الجهة: ${inv.customer || 'غير محدد'}`;
         let itemsHtml = "<table style='width:100%; border-collapse:collapse; margin-top:10px;'><thead><tr style='background:#f4f4f4;'><th>المادة</th><th>الكمية</th><th>السعر</th></tr></thead><tbody>";
         inv.items.forEach(item => { itemsHtml += `<tr><td>${item.name}</td><td style="text-align:center;">${item.qty}</td><td style="text-align:center;">${(item.price || item.cost).toLocaleString()}</td></tr>`; });
-        document.getElementById('modal-items-list').innerHTML = itemsHtml + "</tbody></table>";
+        
+        // عرض حقول الديون والأقساط داخل تفاصيل الفاتورة عند الاستعراض أو الطباعة
+        let financeDetails = "";
+        if (type === 'sales') {
+            financeDetails = `
+                <div style="margin-top:10px; border-top:1px dashed #ccc; padding-top:10px; font-size:0.9rem; text-align:right;">
+                    <div><b>الدين المسجل:</b> ${(inv.debt || 0).toLocaleString()} د.ع</div>
+                    <div><b>الأقساط المجدولة:</b> ${(inv.installment || 0).toLocaleString()} د.ع</div>
+                </div>
+            `;
+        }
+
+        document.getElementById('modal-items-list').innerHTML = itemsHtml + "</tbody></table>" + financeDetails;
         document.getElementById('modal-total').innerText = `المجموع: ${inv.total.toLocaleString()} د.ع`;
         document.getElementById('detail-modal').style.display = 'flex';
     }
@@ -968,7 +1018,6 @@
         let response = "";
         const today = new Date().toLocaleDateString('ar-EG');
 
-        // 1. تحليل عام للمبيعات ورسم بياني لأفضل المواد مبيعاً
         if (query.includes("تحليل") || query.includes("الاكثر مبيعا") || query.includes("بيع") || query.includes("تقرير")) {
             let productSales = {};
             salesInvoices.forEach(inv => {
@@ -1028,7 +1077,6 @@
                 return;
             }
         } 
-        // 2. معالجة الاستعلامات عن الأرباح
         else if (query.includes("ربح") || query.includes("ارباح") || query.includes("فلوس") || query.includes("طلعنا")) {
             let totalProfit = 0;
             const todaySales = salesInvoices.filter(inv => inv.date.includes(today));
@@ -1043,7 +1091,6 @@
             });
             response = `صافي أرباح المحل التقديرية اليوم هي <b>${totalProfit.toLocaleString()} د.ع</b> (هذا الصافي الصافي بعد طرح كلفة المواد والخصومات الصادرة للزبائن).`;
         } 
-        // 3. فحص كمية أو سعر مادة معينة (جرد فوري بالذكاء)
         else if (query.includes("كم") || query.includes("موجود") || query.includes("سعر") || query.includes("جرد")) {
             let foundItem = null;
             for (let item of inventory) {
@@ -1058,7 +1105,6 @@
                 response = "بحثت بسجلات المخزن وما لقيت مادة بهذا الاسم بالضبط، تأكد من كتابة اسم المادة بشكل صحيح عيوني.";
             }
         } 
-        // 4. معالجة النواقص والمواد المنتهية
         else if (query.includes("نواقص") || query.includes("خلص") || query.includes("منتهي")) {
             const lowStock = inventory.filter(i => i.qty <= 2);
             if (lowStock.length > 0) {
@@ -1068,13 +1114,11 @@
                 response = "الحمد لله، مخزنك مستقر بالكامل وكل المواد متوفرة فوق حد الخطر الفوري.";
             }
         } 
-        // 5. معالجة المصاريف والنثريات
         else if (query.includes("مصاريف") || query.includes("صرفنا") || query.includes("خسارة")) {
             const totalExp = expenses.filter(exp => new Date(exp.date).toLocaleDateString('ar-EG') === today)
                                     .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
             response = `مجموع المصاريف والنثريات المسجلة اليوم بلغت <b>${totalExp.toLocaleString()} د.ع</b>. تگدر تراجع تفاصيلها من واجهة المصاريف الكلية.`;
         } 
-        // الرد الافتراضي المرن
         else {
             response = "أهلاً بك عيوني، أنا المساعد الذكي الخاص بالنظام. تگدر تسألني أي سؤال حقيقي ومباشر مثل: 'كم ربحنا اليوم؟'، 'شنو جرد سيروم فيتامين c؟'، 'شنو النواقص بالمحل؟' أو تطلب 'تحليل المبيعات' وراح أجاوبك فوراً بناءً على بيانات الكاشير الحالية.";
         }
@@ -1116,10 +1160,30 @@
     function saveSale() {
         if (!tempSales.length) return alert("السلة فارغة");
         const total = tempSales.reduce((sum, item) => sum + (item.qty * item.price - item.discount), 0);
-        salesInvoices.push({ id: Date.now(), customer: document.getElementById('s-customer').value || "زبون نقدي", date: new Date().toLocaleString('ar-EG'), items: [...tempSales], total });
+        
+        // جلب قيم الديون والأقساط التي تم إدخالها أثناء الفاتورة
+        const debtVal = parseFloat(document.getElementById('s-debt-val').value) || 0;
+        const installmentVal = parseFloat(document.getElementById('s-installment-val').value) || 0;
+
+        salesInvoices.push({ 
+            id: Date.now(), 
+            customer: document.getElementById('s-customer').value || "زبون نقدي", 
+            date: new Date().toLocaleString('ar-EG'), 
+            items: [...tempSales], 
+            total,
+            debt: debtVal,
+            installment: installmentVal
+        });
+
         tempSales.forEach(s => { let st = inventory.find(i => i.name === s.name); if(st) st.qty -= s.qty; });
         localStorage.setItem('pos_inventory', JSON.stringify(inventory));
         localStorage.setItem('pos_s_invoices', JSON.stringify(salesInvoices));
+        if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
+        
+        // إعادة تعيين قيم حقول الديون والأقساط بعد إتمام الفاتورة بنجاح
+        document.getElementById('s-debt-val').value = "0";
+        document.getElementById('s-installment-val').value = "0";
+
         tempSales = []; alert("تم البيع"); showSection('home-screen'); updateQuickStats();
     }
 
@@ -1157,11 +1221,23 @@
     function saveInventoryEdit() {
         inventory[currentEditIndex].qty = parseFloat(document.getElementById('edit-item-qty').value);
         inventory[currentEditIndex].price = parseFloat(document.getElementById('edit-item-price').value);
-        localStorage.setItem('pos_inventory', JSON.stringify(inventory)); renderInventory(); document.getElementById('edit-modal').style.display='none';
+        localStorage.setItem('pos_inventory', JSON.stringify(inventory)); 
+        if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
+        renderInventory(); 
+        document.getElementById('edit-modal').style.display='none';
         updateQuickStats();
     }
 
-    function deleteItemFromInventory(i) { if(confirm("حذف؟")) { inventory.splice(i,1); localStorage.setItem('pos_inventory', JSON.stringify(inventory)); renderInventory(); updateQuickStats(); } }
+    function deleteItemFromInventory(i) { 
+        if(confirm("حذف؟")) { 
+            inventory.splice(i,1); 
+            localStorage.setItem('pos_inventory', JSON.stringify(inventory)); 
+            if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
+            renderInventory(); 
+            updateQuickStats(); 
+        } 
+    }
+    
     function logout() { sessionStorage.removeItem('pos_logged_in_user'); location.reload(); }
     function toggleAuthMode(isReg) { document.getElementById('login-form').style.display=isReg?'none':'block'; document.getElementById('register-form').style.display=isReg?'block':'none'; }
     function toggleSidebar() { document.getElementById('sidebar').classList.toggle('active'); const o = document.getElementById('overlay'); o.style.display = (o.style.display==='block')?'none':'block'; }
