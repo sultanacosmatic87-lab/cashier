@@ -374,8 +374,7 @@
 
     <div id="notif-screen" class="screen">
         <button class="btn-action bg-back" onclick="showSection('home-screen')">رجوع</button>
-        <div class="inner-card">
-            <h3 style="color:#2c3e50"><i class="fas fa-bell"></i> تنبيهات المخزن والمبيعات ⚠️</h3>
+        <div class="inner-card" style="color:#2c3e50"><i class="fas fa-bell"></i> تنبيهات المخزن والمبيعات ⚠️</h3>
             <div id="notif-list-container">
                 <p style="text-align:center; color:#999;">لا توجد تنبيهات حالياً</p>
             </div>
@@ -413,7 +412,7 @@
             <input type="text" id="p-customer" placeholder="اسم المجهز">
             <input type="text" id="p-invoice-num" placeholder="رقم الفاتورة">
             <hr>
-            <button class="btn-action btn-camera" onclick="toggleCamera('reader-purchases', 'p-barcode')"><i class="fas fa-camera"></i> فتح الكاميرا لقراءة الباركود</button>
+            <button class="btn-action btn-camera" onclick="toggleCamera('reader-purchases', 'p-barcode')"><i class="fas fa-camera"></i> فتح الكاميرالقراءة الباركود</button>
             <div id="cam-box-reader-purchases" class="camera-container"><div id="reader-purchases"></div></div>
             <div style="display:flex; gap:10px">
                 <input type="text" id="p-barcode" placeholder="الباركود">
@@ -474,7 +473,6 @@
                 <input type="number" id="s-discount-val" placeholder="0" value="0" style="margin:0; border:none; background:transparent; color:#e74c3c; font-weight:bold;">
             </div>
 
-            <!-- إضافة حقول الديون والأقساط هنا بتصميم مدمج ومتناسق -->
             <div style="display:flex; gap:10px; margin-bottom: 8px;">
                 <div style="flex:1; display:flex; align-items: center; background: #f0f7ff; padding: 10px; border-radius: 12px; border: 1px solid #b3d7ff;">
                     <small style="white-space: nowrap; font-weight: bold; color: #0056b3;">مبلغ الدين:</small>
@@ -519,6 +517,9 @@
             <button class="btn-action" style="background:var(--g-accounts)" onclick="renderDetailedDailyReport()">تقرير اليوم المفصل</button>
             <button class="btn-action" style="background:var(--g-inventory)" onclick="renderProductMovement()">حركة مادة</button>
             <button class="btn-action" style="background:var(--g-reports)" onclick="renderMonthlyReport()">تقرير شهري</button>
+            <button class="btn-action" style="background:#6c5ce7" onclick="triggerAdvancedSalesMonthToDate()">مبيعات أول الشهر إلى تاريخ اليوم</button>
+            <button class="btn-action" style="background:#a29bfe; color:#2c3e50;" onclick="triggerAdvancedPurchasesCurrentMonth()">مشتريات الشهر الحالي الكلية</button>
+            <button class="btn-action" style="background:#34495e" onclick="triggerAdvancedAnnualProfitTable()">التقرير الربحي السنوي الشامل</button>
         </div>
         <div class="inner-card">
             <h3 id="report-title" style="color:var(--text-dark)">اختر نوع التقرير</h3>
@@ -636,6 +637,212 @@
 
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
+
+    // =========================================================================
+    // 💡 تعديل ودمج كلاس FinancialReporter ليتوافق تماماً مع تواريخ النظام العربي المحلي السحابي
+    // =========================================================================
+    class FinancialReporter {
+        constructor(sales, purchases, expenses, currentInventory) {
+            this.sales = sales;
+            this.purchases = purchases;
+            this.expenses = expenses;
+            this.inventory = currentInventory;
+        }
+
+        // دالة مساعدة لتحويل التاريخ العربي النصي (LocaleString) أو صيغة ISO إلى كائن التواريخ البرمجي القياسي
+        parseLocaleDate(dateStr) {
+            if (!dateStr) return new Date();
+            // إذا كان التاريخ مخزن كصيغة ISO قياسية
+            if (dateStr.includes('-') && !dateStr.includes('/')) {
+                return new Date(dateStr);
+            }
+            try {
+                // تقسيم الـ LocaleString مثل "٢٩‏/٥‏/٢٠٢٦، ١٠:٥٢:١٥ م" أو "29/5/2026, 10:52:15 PM"
+                let cleanStr = dateStr.replace(/[\u200E\u200F]/g, ''); // تنظيف المحارف المخفية للنظام
+                let datePart = cleanStr.split(',')[0].split(' ')[0]; 
+                let parts = datePart.split('/');
+                
+                if(parts.length === 3) {
+                    // معالجة الأرقام العربية المشرقية واللاتينية
+                    let day = parseInt(parts[0].replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+                    let month = parseInt(parts[1].replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))) - 1;
+                    let year = parseInt(parts[2].replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+                    
+                    // إذا كان الترتيب المحول مقلوباً بسبب لغة المتصفح
+                    if (day > 2000) { let tmp = day; day = year; year = tmp; }
+                    return new Date(year, month, day);
+                }
+            } catch(e) {
+                console.error("خطأ بفك ترميز تاريخ الفاتورة: ", e);
+            }
+            return new Date(dateStr);
+        }
+
+        // التقرير الأول المطور: مبيعات أول الشهر إلى يوم محدد
+        getSalesFromStartOfMonthToDate(targetDateString) {
+            const targetDate = new Date(targetDateString);
+            const startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+            
+            startOfMonth.setHours(0, 0, 0, 0);
+            targetDate.setHours(23, 59, 59, 999);
+
+            let totalSales = 0;
+            this.sales.forEach(sale => {
+                const saleDate = this.parseLocaleDate(sale.date);
+                if (saleDate >= startOfMonth && saleDate <= targetDate) {
+                    totalSales += sale.total;
+                }
+            });
+            return totalSales;
+        }
+
+        // التقرير الثاني المطور: مشتريات الشهر الحالي الكلية للمحل
+        getPurchasesFromStartOfCurrentMonth() {
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            startOfMonth.setHours(0, 0, 0, 0);
+
+            let totalPurchases = 0;
+            this.purchases.forEach(purchase => {
+                const purchaseDate = this.parseLocaleDate(purchase.date);
+                if (purchaseDate >= startOfMonth && purchaseDate <= now) {
+                    totalPurchases += purchase.total;
+                }
+            });
+            return totalPurchases;
+        }
+
+        // التقرير الثالث المطور: كشف الحسابات السنوي مخصوم المصاريف
+        getMonthlyProfitReport(year) {
+            const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+            
+            const monthlyReport = Array.from({ length: 12 }, (_, i) => ({
+                month: monthNames[i],
+                totalSales: 0,
+                totalCostOfSales: 0, 
+                totalExpenses: 0,
+                netProfit: 0
+            }));
+
+            // حساب فواتير المبيعات وتكلفة المواد المباعة من المخزن
+            this.sales.forEach(sale => {
+                const saleDate = this.parseLocaleDate(sale.date);
+                if (saleDate.getFullYear() === year) {
+                    const monthIndex = saleDate.getMonth();
+                    monthlyReport[monthIndex].totalSales += sale.total;
+                    
+                    // احتساب الكلفة الفعلية التقديرية بناءً على المخزن
+                    if (sale.items) {
+                        sale.items.forEach(soldItem => {
+                            const cleanName = soldItem.name.replace("مرتجع: ", "");
+                            const stockItem = this.inventory.find(i => i.name === cleanName);
+                            const costPrice = stockItem ? stockItem.cost : 0;
+                            
+                            // المرتجعات تطرح تكلفتها تلقائياً بالسالب
+                            let computedCost = costPrice * soldItem.qty;
+                            monthlyReport[monthIndex].totalCostOfSales += (sale.total < 0) ? -Math.abs(computedCost) : computedCost;
+                        });
+                    }
+                }
+            });
+
+            // حساب المصاريف المدفوعة بالمحل
+            this.expenses.forEach(expense => {
+                const expenseDate = this.parseLocaleDate(expense.date);
+                if (expenseDate.getFullYear() === year) {
+                    const monthIndex = expenseDate.getMonth();
+                    monthlyReport[monthIndex].totalExpenses += parseFloat(expense.amount || 0);
+                }
+            });
+
+            // معادلة الأرباح الدقيقة = (المبيعات الكلية - كلفة المواد) - النثريات والمصاريف
+            monthlyReport.forEach(report => {
+                const grossProfit = report.totalSales - report.totalCostOfSales;
+                report.netProfit = grossProfit - report.totalExpenses;
+            });
+
+            return monthlyReport;
+        }
+    }
+
+    // =========================================================================
+    // 🎛️ ربط الدوال المتقدمة بواجهة التقارير الرسومية (UI Integration)
+    // =========================================================================
+    function triggerAdvancedSalesMonthToDate() {
+        const container = document.getElementById('reports-list-container');
+        document.getElementById('report-title').innerText = "مبيعات أول الشهر إلى تاريخ اليوم";
+        
+        const reporterInstance = new FinancialReporter(salesInvoices, purchaseInvoices, expenses, inventory);
+        const todayStr = new Date().toISOString().split('T')[0]; // تاريخ اليوم البرمجي القياسي
+        const total = reporterInstance.getSalesFromStartOfMonthToDate(todayStr);
+        
+        container.innerHTML = `
+            <div class="inner-card" style="background:#f0f7ff; border-top: 5px solid #6c5ce7; padding:20px; text-align:center;">
+                <i class="fas fa-calendar-check" style="font-size:3rem; color:#6c5ce7; margin-bottom:10px;"></i>
+                <h4>إجمالي مبيعات المحل المتراكمة</h4>
+                <p>من تاريخ 1 في الشهر الحالي ولغاية اليوم:</p>
+                <div style="font-size:1.8rem; font-weight:bold; color:#6c5ce7;">${total.toLocaleString()} د.ع</div>
+            </div>
+        `;
+    }
+
+    function triggerAdvancedPurchasesCurrentMonth() {
+        const container = document.getElementById('reports-list-container');
+        document.getElementById('report-title').innerText = "مشتريات الشهر الحالي الكلية";
+        
+        const reporterInstance = new FinancialReporter(salesInvoices, purchaseInvoices, expenses, inventory);
+        const total = reporterInstance.getPurchasesFromStartOfCurrentMonth();
+        
+        container.innerHTML = `
+            <div class="inner-card" style="background:#fff5f5; border-top: 5px solid #e74c3c; padding:20px; text-align:center;">
+                <i class="fas fa-truck-moving" style="font-size:3rem; color:#e74c3c; margin-bottom:10px;"></i>
+                <h4>مجموع فواتير التجهيز والمشتريات</h4>
+                <p>المستلمة والمدخلة للمخزن خلال هذا الشهر الحالي:</p>
+                <div style="font-size:1.8rem; font-weight:bold; color:#e74c3c;">${total.toLocaleString()} د.ع</div>
+            </div>
+        `;
+    }
+
+    function triggerAdvancedAnnualProfitTable() {
+        const container = document.getElementById('reports-list-container');
+        document.getElementById('report-title').innerText = "تقرير الأرباح السنوي مخصوم منه المصاريف (2026)";
+        
+        const reporterInstance = new FinancialReporter(salesInvoices, purchaseInvoices, expenses, inventory);
+        const annualData = reporterInstance.getMonthlyProfitReport(2026);
+        
+        let tableRows = "";
+        annualData.forEach(row => {
+            let profitColor = row.netProfit >= 0 ? "#27ae60" : "#e74c3c";
+            tableRows += `
+                <tr>
+                    <td style="font-weight:bold;">${row.month}</td>
+                    <td>${row.totalSales.toLocaleString()}</td>
+                    <td>${row.totalExpenses.toLocaleString()}</td>
+                    <td style="color:${profitColor}; font-weight:bold;">${row.netProfit.toLocaleString()} د.ع</td>
+                </tr>
+            `;
+        });
+
+        container.innerHTML = `
+            <div class="table-responsive" style="margin-top:10px;">
+                <table class="cart-table" style="font-size:0.8rem;">
+                    <thead>
+                        <tr style="background:#34495e; color:white;">
+                            <th>الشهر</th>
+                            <th>المبيعات</th>
+                            <th>المصاريف</th>
+                            <th>صافي الأرباح</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    // --- بقية دوال النظام الأساسية المستقرة ---
 
     function handleRegister() {
         const name = document.getElementById('reg-name').value;
@@ -887,7 +1094,6 @@
         let itemsHtml = "<table style='width:100%; border-collapse:collapse; margin-top:10px;'><thead><tr style='background:#f4f4f4;'><th>المادة</th><th>الكمية</th><th>السعر</th></tr></thead><tbody>";
         inv.items.forEach(item => { itemsHtml += `<tr><td>${item.name}</td><td style="text-align:center;">${item.qty}</td><td style="text-align:center;">${(item.price || item.cost).toLocaleString()}</td></tr>`; });
         
-        // عرض حقول الديون والأقساط داخل تفاصيل الفاتورة عند الاستعراض أو الطباعة
         let financeDetails = "";
         if (type === 'sales') {
             financeDetails = `
@@ -926,7 +1132,13 @@
                 totalProfit += (inv.total < 0) ? -Math.abs(profit) : profit;
             });
         });
-        const totalExp = expenses.filter(exp => new Date(exp.date).toLocaleDateString('ar-EG') === todayStr).reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+        const totalExp = expenses.filter(exp => {
+            if(!exp.date) return false;
+            // معالجة التواريخ المدخلة يدوياً من نوع input type="date" (YYYY-MM-DD)
+            let formattedExpDate = new Date(exp.date).toLocaleDateString('ar-EG');
+            return formattedExpDate === todayStr;
+        }).reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+        
         document.getElementById('day-sales-total').innerText = totalSales.toLocaleString() + " د.ع";
         document.getElementById('day-profit-total').innerText = totalProfit.toLocaleString() + " د.ع";
         document.getElementById('day-expenses-total').innerText = totalExp.toLocaleString() + " د.ع";
@@ -1115,8 +1327,10 @@
             }
         } 
         else if (query.includes("مصاريف") || query.includes("صرفنا") || query.includes("خسارة")) {
-            const totalExp = expenses.filter(exp => new Date(exp.date).toLocaleDateString('ar-EG') === today)
-                                    .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+            const totalExp = expenses.filter(exp => {
+                if(!exp.date) return false;
+                return new Date(exp.date).toLocaleDateString('ar-EG') === today;
+            }).reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
             response = `مجموع المصاريف والنثريات المسجلة اليوم بلغت <b>${totalExp.toLocaleString()} د.ع</b>. تگدر تراجع تفاصيلها من واجهة المصاريف الكلية.`;
         } 
         else {
@@ -1161,7 +1375,6 @@
         if (!tempSales.length) return alert("السلة فارغة");
         const total = tempSales.reduce((sum, item) => sum + (item.qty * item.price - item.discount), 0);
         
-        // جلب قيم الديون والأقساط التي تم إدخالها أثناء الفاتورة
         const debtVal = parseFloat(document.getElementById('s-debt-val').value) || 0;
         const installmentVal = parseFloat(document.getElementById('s-installment-val').value) || 0;
 
@@ -1180,7 +1393,6 @@
         localStorage.setItem('pos_s_invoices', JSON.stringify(salesInvoices));
         if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
         
-        // إعادة تعيين قيم حقول الديون والأقساط بعد إتمام الفاتورة بنجاح
         document.getElementById('s-debt-val').value = "0";
         document.getElementById('s-installment-val').value = "0";
 
@@ -1387,6 +1599,127 @@
         resContainer.innerHTML = tableHtml + `</tbody></table>`;
     }
 
+    function renderMonthlyReport() {
+        const container = document.getElementById('reports-list-container');
+        document.getElementById('report-title').innerText = "كشف الحسابات الشهري";
+
+        let monthsSet = new Set();
+        
+        salesInvoices.forEach(inv => {
+            let parts = inv.date.split(',')[0].split('/');
+            if(parts.length >= 2) monthsSet.add(`${parts[2]}-${parts[1].padStart(2, '0')}`);
+        });
+        purchaseInvoices.forEach(inv => {
+            let parts = inv.date.split(',')[0].split('/');
+            if(parts.length >= 2) monthsSet.add(`${parts[2]}-${parts[1].padStart(2, '0')}`);
+        });
+        expenses.forEach(exp => {
+            if(exp.date) {
+                let parts = exp.date.split('-');
+                monthsSet.add(`${parts[0]}-${parts[1]}`);
+            }
+        });
+
+        if(monthsSet.size === 0){
+            let d = new Date();
+            monthsSet.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}`);
+        }
+
+        let sortedMonths = Array.from(monthsSet).sort().reverse();
+        let monthOptions = sortedMonths.map(m => `<option value="${m}">${m}</option>`).join('');
+
+        let html = `
+            <div class="inner-card" style="background:#fdf2f4; border:1px solid #ff85a2; padding:15px; border-radius:12px; margin-bottom:15px;">
+                <label><b>اختر الشهر للتحليل الإداري:</b></label>
+                <select id="monthly-report-select" onchange="calculateMonthlyStats()">
+                    ${monthOptions}
+                </select>
+            </div>
+            <div id="monthly-stats-results"></div>
+        `;
+        container.innerHTML = html;
+        calculateMonthlyStats(); 
+    }
+
+    function calculateMonthlyStats() {
+        const selectedMonth = document.getElementById('monthly-report-select').value; 
+        const resultsContainer = document.getElementById('monthly-stats-results');
+        if(!selectedMonth) return;
+
+        let totalPurchases = 0;
+        let totalSales = 0;
+        let totalProfit = 0;
+        let totalExpenses = 0;
+
+        purchaseInvoices.forEach(inv => {
+            let parts = inv.date.split(',')[0].split('/');
+            if(parts.length >= 3) {
+                let invMonth = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+                if(invMonth === selectedMonth) {
+                    totalPurchases += inv.total;
+                }
+            }
+        });
+
+        salesInvoices.forEach(inv => {
+            let parts = inv.date.split(',')[0].split('/');
+            if(parts.length >= 3) {
+                let invMonth = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+                if(invMonth === selectedMonth) {
+                    totalSales += inv.total; 
+                    
+                    inv.items.forEach(soldItem => {
+                        const stockItem = inventory.find(i => i.name === soldItem.name.replace("مرتجع: ", ""));
+                        const costPrice = stockItem ? stockItem.cost : 0;
+                        let itemProfit = (soldItem.price - costPrice) * soldItem.qty - (soldItem.discount || 0);
+                        
+                        totalProfit += (inv.total < 0) ? -Math.abs(itemProfit) : itemProfit;
+                    });
+                }
+            }
+        });
+
+        expenses.forEach(exp => {
+            if(exp.date) {
+                let parts = exp.date.split('-'); 
+                let expMonth = `${parts[0]}-${parts[1]}`;
+                if(expMonth === selectedMonth) {
+                    totalExpenses += parseFloat(exp.amount || 0);
+                }
+            }
+        });
+
+        let netProfitAfterExpenses = totalProfit - totalExpenses;
+
+        resultsContainer.innerHTML = `
+            <div class="summary-box" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">
+                <div class="summary-title"><i class="fas fa-truck-loading"></i> مجموع المشتريات الكلية</div>
+                <div class="summary-val">${totalPurchases.toLocaleString()} د.ع</div>
+            </div>
+            
+            <div class="summary-box" style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);">
+                <div class="summary-title"><i class="fas fa-shopping-cart"></i> مجموع المبيعات الصافية</div>
+                <div class="summary-val">${totalSales.toLocaleString()} د.ع</div>
+            </div>
+            
+            <div class="summary-box" style="background: linear-gradient(135deg, #1abc9c 0%, #16a085 100%);">
+                <div class="summary-title"><i class="fas fa-chart-line"></i> الأرباح التقديرية (قبل المصاريف)</div>
+                <div class="summary-val">${totalProfit.toLocaleString()} د.ع</div>
+            </div>
+
+            <div class="summary-box" style="background: linear-gradient(135deg, #7f8c8d 0%, #95a5a6 100%);">
+                <div class="summary-title"><i class="fas fa-money-bill-wave"></i> مجموع المصاريف والنثريات المدفوعة</div>
+                <div class="summary-val">${totalExpenses.toLocaleString()} د.ع</div>
+            </div>
+            
+            <div class="summary-box" style="background: ${netProfitAfterExpenses >= 0 ? 'linear-gradient(135deg, #27ae60 0%, #1e8449 100%)' : 'linear-gradient(135deg, #d35400 0%, #c0392b 100%)'}; border: 2px solid white;">
+                <div class="summary-title"><i class="fas fa-wallet"></i> الصافي الفعلي بعد طرح المصاريف</div>
+                <div class="summary-val">${netProfitAfterExpenses.toLocaleString()} د.ع</div>
+                <small style="opacity:0.9; display:block; margin-top:4px;">${netProfitAfterExpenses >= 0 ? '📈 مؤشر ممتاز: متجرك يحقق نمواً إيجابياً' : '⚠️ تنبيه: المصاريف تتجاوز أرباح حركة المواد'}</small>
+            </div>
+        `;
+    }
+
     function exportBackup() {
         const data = { inventory, purchaseInvoices, salesInvoices, staffMembers, subscriptions, expenses, returnsLog, storeInfo: JSON.parse(localStorage.getItem('pos_store_info')) || {}, users: JSON.parse(localStorage.getItem('pos_users')) || [] };
         const dl = document.createElement('a'); dl.setAttribute("href", "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data))); dl.setAttribute("download", "backup.json"); dl.click();
@@ -1399,7 +1732,7 @@
         }; reader.readAsText(file);
     }
 
-    function loadLinkSettings() {} function loadUpdateSettings() {} function saveLinkSettings() {} function addNewSubscription() {} function renderMonthlyReport() {} function shareToWhatsApp() {} function exportToPDF() {}
+    function loadLinkSettings() {} function loadUpdateSettings() {} function saveLinkSettings() {} function addNewSubscription() {} function shareToWhatsApp() {} function exportToPDF() {}
 </script>
 </body>
 </html>
