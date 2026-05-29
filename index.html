@@ -93,7 +93,7 @@
         input, select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 12px; font-family: 'Cairo'; outline: none; }
         
         .btn-row { display: flex; gap: 10px; margin-top: 10px; }
-        .btn-action { flex: 1; padding: 15px; border: none; border-radius: 12px; color: white; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
+        .btn-action { flex: 1; padding: 15px; border: none; border-radius: 12px; color: white; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; text-align: center; font-size: 0.9rem; }
         .bg-save { background: #27ae60; }
         .bg-print { background: #3498db; }
         .bg-add { background: #34495e; }
@@ -184,7 +184,7 @@
         }
     </style>
 </head>
-<body onload="initializeDashboard(); checkNotifications(); loadLinkSettings(); loadUpdateSettings(); renderStaff(); loadStoreInfo();"> 
+<body onload="initializeDashboard(); checkNotifications(); loadLinkSettings(); renderStaff(); loadStoreInfo(); renderSubscriptions();"> 
 
 <div id="sidebar" class="sidebar">
     <div class="sidebar-header">
@@ -517,9 +517,9 @@
             <button class="btn-action" style="background:var(--g-accounts)" onclick="renderDetailedDailyReport()">تقرير اليوم المفصل</button>
             <button class="btn-action" style="background:var(--g-inventory)" onclick="renderProductMovement()">حركة مادة</button>
             <button class="btn-action" style="background:var(--g-reports)" onclick="renderMonthlyReport()">تقرير شهري</button>
-            <button class="btn-action" style="background:#6c5ce7" onclick="triggerAdvancedSalesMonthToDate()">مبيعات أول الشهر إلى تاريخ اليوم</button>
-            <button class="btn-action" style="background:#a29bfe; color:#2c3e50;" onclick="triggerAdvancedPurchasesCurrentMonth()">مشتريات الشهر الحالي الكلية</button>
-            <button class="btn-action" style="background:#34495e" onclick="triggerAdvancedAnnualProfitTable()">التقرير الربحي السنوي الشامل</button>
+            <button class="btn-action" style="background:#6c5ce7; min-width: 160px;" onclick="triggerAdvancedSalesMonthToDate()">مبيعات أول الشهر إلى تاريخ اليوم</button>
+            <button class="btn-action" style="background:#a29bfe; color:#2c3e50; min-width: 160px;" onclick="triggerAdvancedPurchasesCurrentMonth()">مشتريات الشهر الحالي الكلية</button>
+            <button class="btn-action" style="background:#34495e; min-width: 160px;" onclick="triggerAdvancedAnnualProfitTable()">التقرير الربحي السنوي الشامل</button>
         </div>
         <div class="inner-card">
             <h3 id="report-title" style="color:var(--text-dark)">اختر نوع التقرير</h3>
@@ -575,7 +575,7 @@
             </div>
 
             <div class="btn-row" style="margin-top: 15px;">
-                <button class="btn-action bg-save" onclick="saveStoreInfo(); saveLinkSettings();">حفظ الإعدادات</button>
+                <button class="btn-action bg-save" onclick="saveStoreInfo();">حفظ الإعدادات</button>
             </div>
         </div>
     </div>
@@ -638,9 +638,6 @@
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
 
-    // =========================================================================
-    // 💡 تعديل ودمج كلاس FinancialReporter ليتوافق تماماً مع تواريخ النظام العربي المحلي السحابي
-    // =========================================================================
     class FinancialReporter {
         constructor(sales, purchases, expenses, currentInventory) {
             this.sales = sales;
@@ -649,26 +646,21 @@
             this.inventory = currentInventory;
         }
 
-        // دالة مساعدة لتحويل التاريخ العربي النصي (LocaleString) أو صيغة ISO إلى كائن التواريخ البرمجي القياسي
         parseLocaleDate(dateStr) {
             if (!dateStr) return new Date();
-            // إذا كان التاريخ مخزن كصيغة ISO قياسية
             if (dateStr.includes('-') && !dateStr.includes('/')) {
                 return new Date(dateStr);
             }
             try {
-                // تقسيم الـ LocaleString مثل "٢٩‏/٥‏/٢٠٢٦، ١٠:٥٢:١٥ م" أو "29/5/2026, 10:52:15 PM"
-                let cleanStr = dateStr.replace(/[\u200E\u200F]/g, ''); // تنظيف المحارف المخفية للنظام
+                let cleanStr = dateStr.replace(/[\u200E\u200F]/g, ''); 
                 let datePart = cleanStr.split(',')[0].split(' ')[0]; 
                 let parts = datePart.split('/');
                 
                 if(parts.length === 3) {
-                    // معالجة الأرقام العربية المشرقية واللاتينية
                     let day = parseInt(parts[0].replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
                     let month = parseInt(parts[1].replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))) - 1;
                     let year = parseInt(parts[2].replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
                     
-                    // إذا كان الترتيب المحول مقلوباً بسبب لغة المتصفح
                     if (day > 2000) { let tmp = day; day = year; year = tmp; }
                     return new Date(year, month, day);
                 }
@@ -678,7 +670,6 @@
             return new Date(dateStr);
         }
 
-        // التقرير الأول المطور: مبيعات أول الشهر إلى يوم محدد
         getSalesFromStartOfMonthToDate(targetDateString) {
             const targetDate = new Date(targetDateString);
             const startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
@@ -696,7 +687,6 @@
             return totalSales;
         }
 
-        // التقرير الثاني المطور: مشتريات الشهر الحالي الكلية للمحل
         getPurchasesFromStartOfCurrentMonth() {
             const now = new Date();
             const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -712,7 +702,6 @@
             return totalPurchases;
         }
 
-        // التقرير الثالث المطور: كشف الحسابات السنوي مخصوم المصاريف
         getMonthlyProfitReport(year) {
             const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
             
@@ -724,21 +713,18 @@
                 netProfit: 0
             }));
 
-            // حساب فواتير المبيعات وتكلفة المواد المباعة من المخزن
             this.sales.forEach(sale => {
                 const saleDate = this.parseLocaleDate(sale.date);
                 if (saleDate.getFullYear() === year) {
                     const monthIndex = saleDate.getMonth();
                     monthlyReport[monthIndex].totalSales += sale.total;
                     
-                    // احتساب الكلفة الفعلية التقديرية بناءً على المخزن
                     if (sale.items) {
                         sale.items.forEach(soldItem => {
                             const cleanName = soldItem.name.replace("مرتجع: ", "");
                             const stockItem = this.inventory.find(i => i.name === cleanName);
                             const costPrice = stockItem ? stockItem.cost : 0;
                             
-                            // المرتجعات تطرح تكلفتها تلقائياً بالسالب
                             let computedCost = costPrice * soldItem.qty;
                             monthlyReport[monthIndex].totalCostOfSales += (sale.total < 0) ? -Math.abs(computedCost) : computedCost;
                         });
@@ -746,7 +732,6 @@
                 }
             });
 
-            // حساب المصاريف المدفوعة بالمحل
             this.expenses.forEach(expense => {
                 const expenseDate = this.parseLocaleDate(expense.date);
                 if (expenseDate.getFullYear() === year) {
@@ -755,7 +740,6 @@
                 }
             });
 
-            // معادلة الأرباح الدقيقة = (المبيعات الكلية - كلفة المواد) - النثريات والمصاريف
             monthlyReport.forEach(report => {
                 const grossProfit = report.totalSales - report.totalCostOfSales;
                 report.netProfit = grossProfit - report.totalExpenses;
@@ -765,15 +749,12 @@
         }
     }
 
-    // =========================================================================
-    // 🎛️ ربط الدوال المتقدمة بواجهة التقارير الرسومية (UI Integration)
-    // =========================================================================
     function triggerAdvancedSalesMonthToDate() {
         const container = document.getElementById('reports-list-container');
         document.getElementById('report-title').innerText = "مبيعات أول الشهر إلى تاريخ اليوم";
         
         const reporterInstance = new FinancialReporter(salesInvoices, purchaseInvoices, expenses, inventory);
-        const todayStr = new Date().toISOString().split('T')[0]; // تاريخ اليوم البرمجي القياسي
+        const todayStr = new Date().toISOString().split('T')[0]; 
         const total = reporterInstance.getSalesFromStartOfMonthToDate(todayStr);
         
         container.innerHTML = `
@@ -841,8 +822,6 @@
             </div>
         `;
     }
-
-    // --- بقية دوال النظام الأساسية المستقرة ---
 
     function handleRegister() {
         const name = document.getElementById('reg-name').value;
@@ -931,24 +910,6 @@
         if (matches.length > 0) {
             displaySearchResults(matches, resultsContainer);
         }
-
-        if (typeof db !== 'undefined') {
-            db.ref('pos_inventory').orderByChild('name').startAt(val).endAt(val + "\uf8ff").limitToFirst(5)
-            .once('value', (snapshot) => {
-                let cloudMatches = [];
-                snapshot.forEach((childSnapshot) => {
-                    let item = childSnapshot.val();
-                    if (!matches.some(m => m.name === item.name)) {
-                        cloudMatches.push(item);
-                    }
-                });
-
-                if (cloudMatches.length > 0) {
-                    matches = matches.concat(cloudMatches);
-                    displaySearchResults(matches, resultsContainer);
-                }
-            }).catch(err => console.log("Firebase Search Error: ", err));
-        }
     }
 
     function displaySearchResults(matches, resultsContainer) {
@@ -1000,7 +961,6 @@
         if(stockItem) { 
             stockItem.qty += qty; 
             localStorage.setItem('pos_inventory', JSON.stringify(inventory)); 
-            if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
         }
         returnsLog.push({ id: Date.now(), name, qty, price, total: qty * price, date: new Date().toLocaleString('ar-EG') });
         localStorage.setItem('pos_returns', JSON.stringify(returnsLog));
@@ -1076,7 +1036,6 @@
             else { inventory.push({ barcode: newItem.barcode, code: newItem.code, name: newItem.name, qty: newItem.qty, cost: newItem.cost, price: newItem.price }); }
         });
         localStorage.setItem('pos_inventory', JSON.stringify(inventory));
-        if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
         alert("تم حفظ الفاتورة"); tempPurchases = []; document.getElementById('purchase-total-text').innerText = "المبلغ الكلي: 0 د.ع"; showSection('home-screen'); updateQuickStats();
     }
 
@@ -1134,7 +1093,6 @@
         });
         const totalExp = expenses.filter(exp => {
             if(!exp.date) return false;
-            // معالجة التواريخ المدخلة يدوياً من نوع input type="date" (YYYY-MM-DD)
             let formattedExpDate = new Date(exp.date).toLocaleDateString('ar-EG');
             return formattedExpDate === todayStr;
         }).reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
@@ -1173,6 +1131,7 @@
         if(id === 'returns-screen') renderReturnsLog();
         if(id === 'out-of-stock-screen') renderOutOfStock();
         if(id === 'notif-screen') checkNotifications();
+        if(id === 'subscriptions-screen') renderSubscriptions();
         window.scrollTo(0,0); 
     }
 
@@ -1354,14 +1313,17 @@
         if (!name || isNaN(qty) || isNaN(price)) return alert("اختر مادة");
         const stock = inventory.find(i => i.name === name);
         if(!stock || stock.qty < qty) return alert("الكمية غير كافية");
+        
         let disc = (document.getElementById('s-discount-type').value === 'amount') ? parseFloat(document.getElementById('s-discount-val').value) || 0 : (price * qty) * ((parseFloat(document.getElementById('s-discount-val').value) || 0) / 100);
         tempSales.push({ name, qty, price, discount: disc });
         renderCartTable(); updateSalesTotal();
+        
         document.getElementById('s-item-name').value = "";
         document.getElementById('s-qty').value = "1";
         document.getElementById('s-price').value = "";
         document.getElementById('s-barcode').value = "";
         document.getElementById('s-code').value = "";
+        document.getElementById('s-discount-val').value = "0";
     }
 
     function renderCartTable() {
@@ -1391,10 +1353,10 @@
         tempSales.forEach(s => { let st = inventory.find(i => i.name === s.name); if(st) st.qty -= s.qty; });
         localStorage.setItem('pos_inventory', JSON.stringify(inventory));
         localStorage.setItem('pos_s_invoices', JSON.stringify(salesInvoices));
-        if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
         
         document.getElementById('s-debt-val').value = "0";
         document.getElementById('s-installment-val').value = "0";
+        document.getElementById('s-customer').value = "";
 
         tempSales = []; alert("تم البيع"); showSection('home-screen'); updateQuickStats();
     }
@@ -1434,7 +1396,6 @@
         inventory[currentEditIndex].qty = parseFloat(document.getElementById('edit-item-qty').value);
         inventory[currentEditIndex].price = parseFloat(document.getElementById('edit-item-price').value);
         localStorage.setItem('pos_inventory', JSON.stringify(inventory)); 
-        if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
         renderInventory(); 
         document.getElementById('edit-modal').style.display='none';
         updateQuickStats();
@@ -1444,7 +1405,6 @@
         if(confirm("حذف؟")) { 
             inventory.splice(i,1); 
             localStorage.setItem('pos_inventory', JSON.stringify(inventory)); 
-            if (typeof db !== 'undefined') db.ref('pos_inventory').set(inventory);
             renderInventory(); 
             updateQuickStats(); 
         } 
@@ -1473,8 +1433,115 @@
     
     function closeModal() { document.getElementById('detail-modal').style.display = 'none'; }
     function closeEditModal() { document.getElementById('edit-modal').style.display = 'none'; }
-    function loadStoreInfo() { const info = JSON.parse(localStorage.getItem('pos_store_info')); if(info) { document.getElementById('store-name-info').value = info.name; document.getElementById('store-address-info').value = info.address; document.getElementById('store-phone-info').value = info.phone; } }
-    function saveStoreInfo() { localStorage.setItem('pos_store_info', JSON.stringify({ name: document.getElementById('store-name-info').value, address: document.getElementById('store-address-info').value, phone: document.getElementById('store-phone-info').value })); alert("تم الحفظ"); }
+    
+    function loadStoreInfo() { 
+        const info = JSON.parse(localStorage.getItem('pos_store_info')); 
+        if(info) { 
+            document.getElementById('store-name-info').value = info.name || ""; 
+            document.getElementById('store-address-info').value = info.address || ""; 
+            document.getElementById('store-phone-info').value = info.phone || ""; 
+        } 
+    }
+    
+    function saveStoreInfo() { 
+        const infoData = {
+            name: document.getElementById('store-name-info').value, 
+            address: document.getElementById('store-address-info').value, 
+            phone: document.getElementById('store-phone-info').value
+        };
+        localStorage.setItem('pos_store_info', JSON.stringify(infoData)); 
+        
+        const linksData = {
+            token: document.getElementById('tg-token').value,
+            chatId: document.getElementById('tg-chatid').value,
+            waLink: document.getElementById('wa-channel-link').value
+        };
+        localStorage.setItem('pos_link_settings', JSON.stringify(linksData));
+        alert("تم حفظ كافة الإعدادات والروابط بنجاح! ✅"); 
+    }
+
+    function loadLinkSettings() {
+        const links = JSON.parse(localStorage.getItem('pos_link_settings'));
+        if(links) {
+            document.getElementById('tg-token').value = links.token || "";
+            document.getElementById('tg-chatid').value = links.chatId || "";
+            document.getElementById('wa-channel-link').value = links.waLink || "";
+        }
+    }
+
+    function addNewSubscription() {
+        const customer = document.getElementById('sub-customer').value;
+        const type = document.getElementById('sub-type').value;
+        const amount = document.getElementById('sub-amount').value;
+        const endDate = document.getElementById('sub-end-date').value;
+
+        if(!customer || !amount || !endDate) return alert("يرجى ملء كافة حقول الاشتراك");
+
+        subscriptions.push({ id: Date.now(), customer, type, amount: parseFloat(amount), endDate });
+        localStorage.setItem('pos_subscriptions', JSON.stringify(subscriptions));
+        
+        document.getElementById('sub-customer').value = "";
+        document.getElementById('sub-type').value = "";
+        document.getElementById('sub-amount').value = "";
+        document.getElementById('sub-end-date').value = "";
+
+        renderSubscriptions();
+        alert("تم حفظ اشتراك الزبون بنجاح 👍");
+    }
+
+    function renderSubscriptions() {
+        const container = document.getElementById('sub-list-container');
+        if(!container) return;
+        container.innerHTML = "";
+        if(subscriptions.length === 0) {
+            container.innerHTML = "<p style='text-align:center; color:#999;'>لا يوجد مشتركون حالياً.</p>";
+            return;
+        }
+        subscriptions.slice().reverse().forEach((sub, i) => {
+            container.innerHTML += `
+                <div class="staff-item">
+                    <div>
+                        <strong>${sub.customer}</strong> - <small>${sub.type || 'باقة عامة'}</small>
+                        <br><small style="color:#6c5ce7;">ينتهي في: ${sub.endDate}</small>
+                    </div>
+                    <strong>${sub.amount.toLocaleString()} د.ع</strong>
+                </div>`;
+        });
+    }
+
+    function shareToWhatsApp() {
+        if(!currentActiveInvoice) return alert("لا توجد فاتورة نشطة للمشاركة");
+        const storeInfo = JSON.parse(localStorage.getItem('pos_store_info')) || {};
+        let text = `🧾 *فاتورة صادرة من ${storeInfo.name || 'كاشير برو'}*\n`;
+        text += `• التاريخ: ${currentActiveInvoice.date}\n`;
+        text += `• الزبون: ${currentActiveInvoice.customer}\n`;
+        text += `-------------------------\n`;
+        currentActiveInvoice.items.forEach(i => {
+            text += `🔹 ${i.name} | العدد: ${i.qty} | السعر: ${(i.price || i.cost).toLocaleString()} د.ع\n`;
+        });
+        text += `-------------------------\n`;
+        text += `💰 *المجموع الكلي: ${currentActiveInvoice.total.toLocaleString()} د.ع*`;
+        
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    }
+
+    function exportToPDF() {
+        if(!currentActiveInvoice) return alert("لا توجد فاتورة لتصديرها");
+        const element = document.getElementById('print-area');
+        document.getElementById('store-header-print').style.display = 'block';
+        
+        const opt = {
+            margin:       10,
+            filename:     `Invoice-${currentActiveInvoice.id}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        
+        html2pdf().set(opt).from(element).save().then(() => {
+            document.getElementById('store-header-print').style.display = 'none';
+        });
+    }
 
     function renderReports(type) {
         const container = document.getElementById('reports-list-container');
@@ -1731,8 +1798,6 @@
             try { const d = JSON.parse(ev.target.result); if(confirm("استبدال البيانات الحالية بالنسخة المستوردة؟")) { localStorage.setItem('pos_inventory', JSON.stringify(d.inventory)); localStorage.setItem('pos_s_invoices', JSON.stringify(d.salesInvoices)); location.reload(); } } catch(err) { alert("ملف غير صالح"); }
         }; reader.readAsText(file);
     }
-
-    function loadLinkSettings() {} function loadUpdateSettings() {} function saveLinkSettings() {} function addNewSubscription() {} function shareToWhatsApp() {} function exportToPDF() {}
 </script>
 </body>
 </html>
